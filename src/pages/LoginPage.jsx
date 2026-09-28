@@ -111,7 +111,7 @@ export default function LoginPage() {
             </div>
           )}
 
-          <div className="pt-2 space-y-2.5">
+          <div className="pt-2">
             <button
               type="submit"
               disabled={isLoggingIn}
@@ -119,56 +119,9 @@ export default function LoginPage() {
             >
               {isLoggingIn ? "Signing in..." : "Sign In"}
             </button>
-
-            <button
-              type="button"
-              onClick={() => setShowDemoUsersModal(true)}
-              className="w-full bg-slate-50 hover:bg-slate-100 text-slate-700 font-medium py-2 rounded-lg border border-slate-200 transition-colors cursor-pointer text-xs flex items-center justify-center gap-1.5"
-            >
-              <KeyRound className="w-3.5 h-3.5 text-blue-600" />
-              Quick Role / Student Login
-            </button>
           </div>
         </form>
       </div>
-
-      {/* Role & Student Selector Modal */}
-      {showDemoUsersModal && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-2xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl shadow-xl border border-slate-200 max-w-md w-full p-5 space-y-3 text-xs">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
-                <UserCheck className="w-4 h-4 text-blue-600" />
-                Select Account to Sign In
-              </h3>
-              <button
-                onClick={() => setShowDemoUsersModal(false)}
-                className="text-slate-400 hover:text-slate-600 font-bold text-sm cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="space-y-1.5 max-h-72 overflow-y-auto pr-1">
-              {demoUsers.map((u) => (
-                <button
-                  key={u.id}
-                  onClick={() => handleQuickDemoLogin(u)}
-                  className="w-full text-left p-2.5 rounded-lg border border-slate-200 hover:border-blue-300 hover:bg-blue-50/50 transition-colors flex items-center justify-between cursor-pointer"
-                >
-                  <div>
-                    <p className="font-semibold text-slate-900 text-xs">{u.name}</p>
-                    <p className="text-[11px] text-slate-500">{u.title} · {u.email}</p>
-                  </div>
-                  <span className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded text-[10px] font-mono">
-                    {u.siteScope || 'ALL'}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

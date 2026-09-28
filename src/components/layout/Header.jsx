@@ -203,7 +203,7 @@ export default function Header({ toggleSidebar }) {
             </button>
 
             {showRoleSelector && (
-              <div className="absolute right-0 mt-2 w-72 bg-white text-slate-900 rounded-xl shadow-xl border border-slate-200 z-50 p-3 space-y-2.5 text-xs">
+              <div className="absolute right-0 mt-2 w-64 bg-white text-slate-900 rounded-xl shadow-xl border border-slate-200 z-50 p-3 space-y-2.5 text-xs">
                 <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-200 space-y-1">
                   <p className="font-bold text-slate-900 text-xs">{currentUser.name}</p>
                   <p className="text-[11px] text-blue-600 font-medium">{currentRole.name}</p>
@@ -211,32 +211,6 @@ export default function Header({ toggleSidebar }) {
                     Scope: {currentUser.studyScope || 'CLIN-001'} · {currentUser.siteScope || 'All Sites'}
                   </p>
                 </div>
-
-                {canSwitchPersona && (
-                  <div className="space-y-1">
-                    <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider px-1">
-                      Switch User Account
-                    </p>
-                    <div className="max-h-48 overflow-y-auto space-y-0.5">
-                      {demoUsers.map(user => (
-                        <button
-                          key={user.id}
-                          onClick={() => {
-                            if (switchUserPersona) switchUserPersona(user.id);
-                            else switchRole(user.roleId);
-                            setShowRoleSelector(false);
-                          }}
-                          className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs flex justify-between items-center cursor-pointer ${
-                            user.id === currentUser.id ? 'bg-blue-50 text-blue-700 font-semibold' : 'hover:bg-slate-50 text-slate-700'
-                          }`}
-                        >
-                          <span className="truncate">{user.name}</span>
-                          <span className="text-[10px] text-slate-400">{user.roleId}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
 
                 <div className="pt-1 border-t border-slate-100">
                   <button
