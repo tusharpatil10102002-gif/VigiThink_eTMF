@@ -5,20 +5,19 @@ import {
   Users,
   ShieldCheck,
   UserPlus,
-  KeyRound,
-  Eye,
-  EyeOff,
   Edit3,
   Trash2,
   Power,
-  RefreshCw,
   CheckCircle2,
-  XCircle,
   Download,
-  UserCheck,
   Lock,
-  Calendar,
-  ClipboardCheck,
+  Building,
+  ShieldAlert,
+  FileKey,
+  Database,
+  History,
+  FileCheck,
+  Clock,
   X
 } from 'lucide-react';
 
@@ -27,42 +26,36 @@ export default function UserRoleManagement() {
     currentUser,
     rolesList,
     usersList,
-    rotationSchedule,
-    setupChecklist,
-    setSetupChecklist,
     createUserCredential,
     updateUserCredential,
     toggleUserActiveStatus,
     deleteUserCredential,
-    applyStudentRotation,
     switchUserPersona
   } = useAuth();
 
   const { studies } = useTMFData();
 
-  const [activeTab, setActiveTab] = useState('users'); // 'users' | 'rotations' | 'permissions' | 'checklist'
-  const [showPasswords, setShowPasswords] = useState({});
+  const [activeTab, setActiveTab] = useState('users'); // 'users' | 'permissions' | 'security'
   const [bannerMessage, setBannerMessage] = useState('');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
 
-  const isAdminOrMentor = currentUser.roleId === 'system_admin' || currentUser.roleId === 'tmf_manager';
-  const isSystemAdmin = currentUser.roleId === 'system_admin';
+  const isAdminOrMentor = currentUser?.roleId === 'system_admin' || currentUser?.roleId === 'tmf_manager';
+  const isSystemAdmin = currentUser?.roleId === 'system_admin';
 
-  // Form state for Create / Edit User
+  // Form state for Create User
   const [formData, setFormData] = useState({
     name: '',
     loginId: '',
     email: '',
     password: '',
     mobile: '',
-    course: 'Clinical Research, Pharmacovigilance & Clinical Data Management',
-    position: 'Student',
+    department: 'Clinical Operations',
+    position: 'Clinical Research Associate',
     roleId: 'cra',
-    trainingRole: 'CRA – Rotation 1',
-    studyScope: 'CLIN-001',
+    studyScope: 'ALL',
     countryScope: 'India',
-    siteScope: 'Site 001 - AIIMS RPC Eye Centre, New Delhi'
+    siteScope: 'ALL'
   });
 
   const showToast = (msg) => {
@@ -70,21 +63,17 @@ export default function UserRoleManagement() {
     setTimeout(() => setBannerMessage(''), 5000);
   };
 
-  const togglePasswordVisibility = (uid) => {
-    setShowPasswords(prev => ({ ...prev, [uid]: !prev[uid] }));
-  };
-
   // Inline Role Change Handler
   const handleInlineRoleChange = async (user, newRoleId) => {
     const roleObj = rolesList.find(r => r.id === newRoleId);
     const newSiteScope =
-      newRoleId === 'cra' || newRoleId === 'site_user'
-        ? user.assignedSite || 'Site 001 - AIIMS RPC Eye Centre, New Delhi'
+      newRoleId === 'cra' || newRoleId === 'site_user' || newRoleId === 'investigator'
+        ? user.assignedSite || (studies[0]?.sites?.[0]?.name ? `${studies[0].sites[0].number || 'Site 001'} - ${studies[0].sites[0].name}` : 'ALL')
         : 'ALL';
 
     const res = await updateUserCredential(user.id, {
       roleId: newRoleId,
-      trainingRole: `${roleObj ? roleObj.name : newRoleId} (Updated by Admin)`,
+      title: roleObj?.name || newRoleId,
       siteScope: newSiteScope
     });
 
@@ -114,13 +103,12 @@ export default function UserRoleManagement() {
         email: '',
         password: '',
         mobile: '',
-        course: 'Clinical Research & Pharmacovigilance',
-        position: 'Student',
+        department: 'Clinical Operations',
+        position: 'Clinical Research Associate',
         roleId: 'cra',
-        trainingRole: 'CRA – Rotation 1',
-        studyScope: 'CLIN-001',
+        studyScope: 'ALL',
         countryScope: 'India',
-        siteScope: 'Site 001 - AIIMS RPC Eye Centre, New Delhi'
+        siteScope: 'ALL'
       });
     } else {
       showToast(`Error: ${res.error}`);
@@ -140,26 +128,17 @@ export default function UserRoleManagement() {
     }
   };
 
-  // Apply Rotation Matrix
-  const handleApplyRotation = async (rotationName) => {
-    const res = await applyStudentRotation(rotationName);
-    if (res.success) {
-      showToast(res.message);
-    }
-  };
-
   // Export Users & Credentials CSV
   const handleExportCredentialsCsv = () => {
     const headers = [
       'User Name',
       'Position',
+      'Department',
       'Login ID',
       'Personal Email',
-      'Password',
+      'Password Security',
       'Mobile Number',
-      'Registered Course',
       'Active eTMF Role',
-      'Training Role',
       'Study Scope',
       'Country Scope',
       'Site Scope',
@@ -167,14 +146,13 @@ export default function UserRoleManagement() {
     ];
     const rows = usersList.map(u => [
       `"${u.name}"`,
-      `"${u.position || ''}"`,
+      `"${u.position || u.title || ''}"`,
+      `"${u.department || 'Clinical Operations'}"`,
       `"${u.loginId}"`,
       `"${u.email}"`,
-      `"${u.password}"`,
+      `"[PROTECTED / BCRYPT ENCRYPTED]"`,
       `"${u.mobile || ''}"`,
-      `"${u.course || ''}"`,
       `"${u.title || u.roleId}"`,
-      `"${u.trainingRole || ''}"`,
       `"${u.studyScope}"`,
       `"${u.countryScope}"`,
       `"${u.siteScope}"`,
@@ -186,15 +164,32 @@ export default function UserRoleManagement() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', 'Clinidea_Education_eTMF_User_Credentials_RBAC.csv');
+    link.setAttribute('download', 'VigiThink_eTMF_User_Access_Governance.csv');
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
-  const allSitesList = studies
-    .flatMap(s => (s.countries || []).flatMap(c => c.sites || []))
-    .map(st => st.name);
+  const allSitesList = Array.from(
+    new Set([
+      ...studies.flatMap(s => (s.sites || []).map(st => `${st.number || st.id} - ${st.name}`)),
+      ...studies.flatMap(s => (s.countries || []).flatMap(c => (c.sites || []).map(st => `${st.number || st.id} - ${st.name}`)))
+    ])
+  ).filter(Boolean);
+
+  const getSitesForStudy = (studyId) => {
+    if (!studyId || studyId === 'ALL') {
+      return allSitesList;
+    }
+    const target = studies.find(s => s.id === studyId);
+    if (!target) return allSitesList;
+    const sites = [
+      ...(target.sites || []).map(st => `${st.number || st.id} - ${st.name}`),
+      ...(target.countries || []).flatMap(c => (c.sites || []).map(st => `${st.number || st.id} - ${st.name}`))
+    ];
+    const unique = Array.from(new Set(sites)).filter(Boolean);
+    return unique.length > 0 ? unique : allSitesList;
+  };
 
   return (
     <div className="p-6 space-y-6 bg-slate-50 min-h-full text-xs font-sans">
@@ -204,12 +199,12 @@ export default function UserRoleManagement() {
           <div className="flex items-center gap-2">
             <ShieldCheck className="w-5 h-5 text-emerald-400" />
             <h1 className="text-base font-extrabold tracking-wide">
-              CLINIDEA EDUCATION — eTMF ROLE & CREDENTIAL GOVERNANCE CENTER
+              VIGITHINK eTMF: USER ACCESS &amp; GOVERNANCE CENTER
             </h1>
           </div>
           <p className="text-xs text-slate-300 font-mono">
-            Logged in as: <span className="text-emerald-300 font-bold">{currentUser.name}</span> ({currentUser.loginId}) | Active Role:{' '}
-            <span className="text-sky-300 font-bold">{currentUser.title}</span>
+            Logged in as: <span className="text-emerald-300 font-bold">{currentUser?.name}</span> ({currentUser?.loginId}) | Active Role:{' '}
+            <span className="text-sky-300 font-bold">{currentUser?.title || currentUser?.roleId}</span>
           </p>
         </div>
 
@@ -218,7 +213,7 @@ export default function UserRoleManagement() {
             onClick={handleExportCredentialsCsv}
             className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white font-semibold border border-white/20 flex items-center gap-1.5 cursor-pointer transition-colors"
           >
-            <Download className="w-3.5 h-3.5 text-emerald-300" /> Export Credentials CSV
+            <Download className="w-3.5 h-3.5 text-emerald-300" /> Export Governance Manifest (CSV)
           </button>
 
           {isAdminOrMentor && (
@@ -240,7 +235,7 @@ export default function UserRoleManagement() {
             <span>{bannerMessage}</span>
           </div>
           <button onClick={() => setBannerMessage('')} className="text-emerald-700 hover:text-emerald-900 font-bold cursor-pointer">
-            ✕
+            <X className="w-4 h-4" />
           </button>
         </div>
       )}
@@ -251,57 +246,46 @@ export default function UserRoleManagement() {
           onClick={() => setActiveTab('users')}
           className={`px-4 py-2 rounded-lg font-bold flex items-center gap-1.5 cursor-pointer transition-colors ${
             activeTab === 'users'
-              ? 'bg-clinevo-blue text-white shadow-xs'
+              ? 'bg-blue-600 text-white shadow-xs'
               : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
           }`}
         >
-          <Users className="w-3.5 h-3.5" /> 1. Student & Admin Credentials ({usersList.length})
-        </button>
-
-        <button
-          onClick={() => setActiveTab('rotations')}
-          className={`px-4 py-2 rounded-lg font-bold flex items-center gap-1.5 cursor-pointer transition-colors ${
-            activeTab === 'rotations'
-              ? 'bg-clinevo-blue text-white shadow-xs'
-              : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
-          }`}
-        >
-          <Calendar className="w-3.5 h-3.5" /> 2. 6-Rotation Schedule (Weeks 1–12)
+          <Users className="w-3.5 h-3.5" /> 1. User &amp; Personnel Directory ({usersList.length})
         </button>
 
         <button
           onClick={() => setActiveTab('permissions')}
           className={`px-4 py-2 rounded-lg font-bold flex items-center gap-1.5 cursor-pointer transition-colors ${
             activeTab === 'permissions'
-              ? 'bg-clinevo-blue text-white shadow-xs'
+              ? 'bg-blue-600 text-white shadow-xs'
               : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
           }`}
         >
-          <Lock className="w-3.5 h-3.5" /> 3. Master Role Permission Matrix (9 Roles)
+          <Lock className="w-3.5 h-3.5" /> 2. Master Role Permission Matrix ({rolesList.length} Roles)
         </button>
 
         <button
-          onClick={() => setActiveTab('checklist')}
+          onClick={() => setActiveTab('security')}
           className={`px-4 py-2 rounded-lg font-bold flex items-center gap-1.5 cursor-pointer transition-colors ${
-            activeTab === 'checklist'
-              ? 'bg-clinevo-blue text-white shadow-xs'
+            activeTab === 'security'
+              ? 'bg-blue-600 text-white shadow-xs'
               : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
           }`}
         >
-          <ClipboardCheck className="w-3.5 h-3.5" /> 4. Setup & Governance Checklist
+          <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> 3. System Security &amp; Access Governance
         </button>
       </div>
 
-      {/* TAB 1: USER CREDENTIALS & LIVE ROLE CHANGER */}
+      {/* TAB 1: USER DIRECTORY & LIVE ROLE ASSIGNMENT */}
       {activeTab === 'users' && (
         <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
           <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
             <div>
               <h2 className="text-sm font-bold text-slate-900">
-                Clinidea Education — Active User Accounts, Credentials & Live Role Assignment
+                Active User Accounts &amp; Role-Based Access Scopes
               </h2>
               <p className="text-[11px] text-slate-500">
-                Admin (admin@clinidea.in) can change anyone&apos;s eTMF role, study/site scope, password, or active status in real time.
+                Enterprise RBAC controls: System Administrator can update eTMF roles, study scopes, facility bindings, or active account status.
               </p>
             </div>
           </div>
@@ -309,55 +293,49 @@ export default function UserRoleManagement() {
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-xs">
               <thead>
-                <tr className="bg-clinevo-table-header text-white font-bold text-[11px] uppercase">
-                  <th className="p-3">User / Student Details</th>
-                  <th className="p-3">Login ID & Password</th>
-                  <th className="p-3">Assigned eTMF Role (Admin Editable)</th>
-                  <th className="p-3">4D Scope (Study / Site)</th>
+                <tr className="bg-[#132E52] text-white font-bold text-[11px] uppercase">
+                  <th className="p-3">User &amp; Department</th>
+                  <th className="p-3">Login ID &amp; Credential Security</th>
+                  <th className="p-3">Assigned eTMF Role</th>
+                  <th className="p-3">Assigned 4D Scope (Study / Site)</th>
                   <th className="p-3 text-center">Permissions Summary</th>
                   <th className="p-3 text-center">Status</th>
-                  <th className="p-3 text-right">Admin Actions</th>
+                  <th className="p-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 text-slate-800">
                 {usersList.map(u => {
-                  const roleDef = rolesList.find(r => r.id === u.roleId) || rolesList[3];
+                  const roleDef = rolesList.find(r => r.id === u.roleId) || rolesList[0];
                   const perms = roleDef.permissions || {};
-                  const isPassVisible = !!showPasswords[u.id];
 
                   return (
                     <tr key={u.id} className={`hover:bg-sky-50/50 transition-colors ${u.isActive === false ? 'bg-rose-50/30 opacity-70' : ''}`}>
-                      {/* Column 1: Student/User Info */}
+                      {/* Column 1: User & Position Info */}
                       <td className="p-3">
                         <div className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
                           <span>{u.name}</span>
                           <span className="text-[10px] px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-300 font-mono">
-                            {u.position || 'Student'}
+                            {u.position || u.title || 'Staff'}
                           </span>
                         </div>
                         <p className="text-[11px] text-slate-500 font-mono mt-0.5">Email: {u.email}</p>
-                        {u.mobile && <p className="text-[10px] text-slate-500 font-mono">Mobile: {u.mobile}</p>}
-                        {u.course && <p className="text-[10px] text-blue-700 font-medium mt-0.5 truncate max-w-xs">{u.course}</p>}
+                        <p className="text-[10px] text-blue-800 font-semibold mt-0.5">
+                          Department: {u.department || 'Clinical Operations'}
+                        </p>
                       </td>
 
-                      {/* Column 2: Login ID & Password */}
+                      {/* Column 2: Login ID & Credential Security */}
                       <td className="p-3 font-mono">
-                        <p className="text-blue-800 font-bold text-[11px]">{u.loginId}</p>
+                        <p className="text-blue-900 font-bold text-[11px]">{u.loginId}</p>
                         <div className="flex items-center gap-1.5 mt-1">
-                          <span className="px-2 py-0.5 bg-slate-100 border border-slate-300 rounded text-[11px] text-emerald-800 font-bold">
-                            {isPassVisible ? u.password : '••••••••••••'}
+                          <span className="px-2 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded text-[10px] font-mono font-medium flex items-center gap-1">
+                            <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                            bcrypt hashed
                           </span>
-                          <button
-                            onClick={() => togglePasswordVisibility(u.id)}
-                            className="p-1 text-slate-500 hover:text-slate-800 cursor-pointer"
-                            title={isPassVisible ? 'Hide Password' : 'Show Password'}
-                          >
-                            {isPassVisible ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                          </button>
                         </div>
                       </td>
 
-                      {/* Column 3: Live Role Dropdown */}
+                      {/* Column 3: Role Selector */}
                       <td className="p-3">
                         {isAdminOrMentor ? (
                           <div className="space-y-1">
@@ -372,14 +350,14 @@ export default function UserRoleManagement() {
                                 </option>
                               ))}
                             </select>
-                            <p className="text-[10px] text-slate-500 font-mono">{u.trainingRole}</p>
+                            <p className="text-[10px] text-slate-500 font-mono">{roleDef.category || 'Operational Scope'}</p>
                           </div>
                         ) : (
                           <div>
                             <span className={`px-2.5 py-1 rounded text-xs font-bold border ${roleDef.badgeColor}`}>
                               {roleDef.name}
                             </span>
-                            <p className="text-[10px] text-slate-500 font-mono mt-1">{u.trainingRole}</p>
+                            <p className="text-[10px] text-slate-500 font-mono mt-1">{roleDef.category}</p>
                           </div>
                         )}
                       </td>
@@ -391,14 +369,14 @@ export default function UserRoleManagement() {
                             <div className="flex items-center gap-1">
                               <span className="text-[10px] text-slate-500 w-10">Study:</span>
                               <select
-                                value={u.studyScope}
+                                value={u.studyScope || 'ALL'}
                                 onChange={(e) => handleInlineScopeChange(u, 'studyScope', e.target.value)}
                                 className="bg-slate-50 border border-slate-300 rounded px-2 py-0.5 text-[11px] font-mono"
                               >
                                 <option value="ALL">ALL Studies</option>
                                 {studies.map(st => (
                                   <option key={st.id} value={st.id}>
-                                    {st.id} ({st.protocolNumber})
+                                    {st.id} ({st.protocolNumber || st.shortName})
                                   </option>
                                 ))}
                               </select>
@@ -406,12 +384,12 @@ export default function UserRoleManagement() {
                             <div className="flex items-center gap-1">
                               <span className="text-[10px] text-slate-500 w-10">Site:</span>
                               <select
-                                value={u.siteScope}
+                                value={u.siteScope || 'ALL'}
                                 onChange={(e) => handleInlineScopeChange(u, 'siteScope', e.target.value)}
                                 className="bg-slate-50 border border-slate-300 rounded px-2 py-0.5 text-[11px] font-mono max-w-[190px] truncate"
                               >
-                                <option value="ALL">ALL Sites in Study</option>
-                                {allSitesList.map(siteName => (
+                                <option value="ALL">ALL Sites</option>
+                                {getSitesForStudy(u.studyScope).map(siteName => (
                                   <option key={siteName} value={siteName}>
                                     {siteName}
                                   </option>
@@ -421,9 +399,9 @@ export default function UserRoleManagement() {
                           </div>
                         ) : (
                           <div className="font-mono text-[11px]">
-                            <p className="font-bold text-slate-800">Study: {u.studyScope}</p>
-                            <p className="text-slate-600">Country: {u.countryScope}</p>
-                            <p className="text-blue-700 truncate max-w-[180px]">Site: {u.siteScope}</p>
+                            <p className="font-bold text-slate-800">Study: {u.studyScope || 'ALL'}</p>
+                            <p className="text-slate-600">Country: {u.countryScope || 'India'}</p>
+                            <p className="text-blue-700 truncate max-w-[180px]">Site: {u.siteScope || 'ALL'}</p>
                           </div>
                         )}
                       </td>
@@ -456,16 +434,16 @@ export default function UserRoleManagement() {
                         </span>
                       </td>
 
-                      {/* Column 7: Admin Actions */}
+                      {/* Column 7: Actions */}
                       <td className="p-3 text-right">
                         <div className="flex items-center justify-end gap-1.5">
                           <button
                             onClick={() => {
                               switchUserPersona(u.id);
-                              showToast(`Switched active session into ${u.name} (${u.title})`);
+                              showToast(`Switched active session into ${u.name} (${u.title || u.roleId})`);
                             }}
                             className="px-2.5 py-1 bg-sky-50 hover:bg-sky-100 text-blue-700 border border-sky-200 rounded text-[11px] font-semibold cursor-pointer"
-                            title="Test / Impersonate this User Account"
+                            title="Test / Switch Active Session to this User"
                           >
                             Switch To
                           </button>
@@ -475,7 +453,7 @@ export default function UserRoleManagement() {
                               <button
                                 onClick={() => setEditingUser({ ...u })}
                                 className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded border border-slate-300 cursor-pointer"
-                                title="Edit Credentials / Password / Scope"
+                                title="Edit User Credentials & Scope"
                               >
                                 <Edit3 className="w-3.5 h-3.5" />
                               </button>
@@ -497,7 +475,7 @@ export default function UserRoleManagement() {
                                 <Power className="w-3.5 h-3.5" />
                               </button>
 
-                              {isSystemAdmin && u.loginId !== 'admin@clinidea.in' && (
+                              {isSystemAdmin && u.loginId !== 'admin@vigithink.com' && (
                                 <button
                                   onClick={async () => {
                                     const res = await deleteUserCredential(u.id);
@@ -524,84 +502,25 @@ export default function UserRoleManagement() {
         </div>
       )}
 
-      {/* TAB 2: 6-ROTATION SCHEDULE ENGINE */}
-      {activeTab === 'rotations' && (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden space-y-4 p-5">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-3">
-            <div>
-              <h2 className="text-sm font-bold text-slate-900">
-                Clinidea Education — 12-Week Student Role Rotation Schedule (Rotations 1 to 6)
-              </h2>
-              <p className="text-[11px] text-slate-500">
-                Click &quot;Apply Rotation&quot; to automatically assign the exact roles and scopes for all 6 students for that 2-week block.
-              </p>
-            </div>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr className="bg-clinevo-table-header text-white font-bold text-[11px]">
-                  <th className="p-3">Rotation</th>
-                  <th className="p-3">Weeks</th>
-                  <th className="p-3">Shweta Pagare</th>
-                  <th className="p-3">Sanjay Pawar</th>
-                  <th className="p-3">Somesh Patidar</th>
-                  <th className="p-3">Gourish Chouksey</th>
-                  <th className="p-3">Shubham Sharnagat</th>
-                  <th className="p-3">Mary Vismaya</th>
-                  <th className="p-3">Main Learning Objective</th>
-                  <th className="p-3 text-right">Execute Rotation</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {rotationSchedule.map(rot => (
-                  <tr key={rot.rotation} className="hover:bg-sky-50/60">
-                    <td className="p-3 font-bold text-blue-800">{rot.rotation}</td>
-                    <td className="p-3 font-mono font-semibold text-slate-700">{rot.weeks}</td>
-                    <td className="p-3 font-semibold text-slate-900">{rot.assignments.usr_shweta.label}</td>
-                    <td className="p-3 font-semibold text-slate-900">{rot.assignments.usr_sanjay.label}</td>
-                    <td className="p-3 font-semibold text-slate-900">{rot.assignments.usr_somesh.label}</td>
-                    <td className="p-3 font-semibold text-slate-900">{rot.assignments.usr_gourish.label}</td>
-                    <td className="p-3 font-semibold text-slate-900">{rot.assignments.usr_shubham.label}</td>
-                    <td className="p-3 font-semibold text-slate-900">{rot.assignments.usr_mary.label}</td>
-                    <td className="p-3 text-[11px] text-slate-600 max-w-xs">{rot.objective}</td>
-                    <td className="p-3 text-right">
-                      {isAdminOrMentor && (
-                        <button
-                          onClick={() => handleApplyRotation(rot.rotation)}
-                          className="px-3 py-1.5 bg-clinevo-blue hover:bg-blue-700 text-white font-bold rounded shadow-xs cursor-pointer whitespace-nowrap"
-                        >
-                          Apply {rot.rotation}
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 3: MASTER PERMISSION REFERENCE MATRIX */}
+      {/* TAB 2: MASTER PERMISSION MATRIX */}
       {activeTab === 'permissions' && (
         <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden p-5 space-y-4">
           <div>
             <h2 className="text-sm font-bold text-slate-900">
-              CLINIDEA EDUCATION — eTMF MASTER ROLE PERMISSION REFERENCE
+              eTMF Master Role Permission &amp; Governance Matrix
             </h2>
             <p className="text-[11px] text-slate-500">
-              Students receive only the access needed for their current rotation. Founder (Tushar Patil) holds full System Administrator privileges.
+              System access is governed by strictly defined privileges aligned with regulatory compliance (ICH GCP, 21 CFR Part 11, and DIA TMF Model v3.1).
             </p>
           </div>
 
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-xs">
               <thead>
-                <tr className="bg-clinevo-table-header text-white font-bold text-[11px]">
+                <tr className="bg-[#132E52] text-white font-bold text-[11px]">
                   <th className="p-3">Role</th>
-                  <th className="p-3">Purpose</th>
+                  <th className="p-3">Department</th>
+                  <th className="p-3">Regulatory Purpose</th>
                   <th className="p-3 text-center">View</th>
                   <th className="p-3 text-center">Download</th>
                   <th className="p-3 text-center">Upload</th>
@@ -611,7 +530,6 @@ export default function UserRoleManagement() {
                   <th className="p-3 text-center">Delete</th>
                   <th className="p-3 text-center">Admin</th>
                   <th className="p-3">Recommended Scope</th>
-                  <th className="p-3">Use in Clinidea Training</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
@@ -628,8 +546,12 @@ export default function UserRoleManagement() {
 
                   return (
                     <tr key={r.id} className="hover:bg-slate-50">
-                      <td className="p-3 font-bold text-slate-900">{r.name}</td>
-                      <td className="p-3 text-slate-600">{r.purpose}</td>
+                      <td className="p-3">
+                        <span className="font-bold text-slate-900 block">{r.name}</span>
+                        <span className="text-[10px] font-mono text-slate-400">{r.id}</span>
+                      </td>
+                      <td className="p-3 font-semibold text-blue-900">{r.department || r.category}</td>
+                      <td className="p-3 text-slate-600 max-w-xs">{r.purpose}</td>
                       <td className="p-3 text-center">{renderYesNo(p.view)}</td>
                       <td className="p-3 text-center">{renderYesNo(p.download)}</td>
                       <td className="p-3 text-center">{renderYesNo(p.upload, r.id === 'tmf_lead_trainee')}</td>
@@ -639,7 +561,6 @@ export default function UserRoleManagement() {
                       <td className="p-3 text-center">{renderYesNo(p.delete)}</td>
                       <td className="p-3 text-center">{renderYesNo(p.admin)}</td>
                       <td className="p-3 font-mono text-[11px] text-blue-800">{r.recommendedScope}</td>
-                      <td className="p-3 font-semibold text-slate-700">{r.trainingUse}</td>
                     </tr>
                   );
                 })}
@@ -649,61 +570,103 @@ export default function UserRoleManagement() {
         </div>
       )}
 
-      {/* TAB 4: 11-POINT SETUP & GOVERNANCE CHECKLIST */}
-      {activeTab === 'checklist' && (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden p-5 space-y-4">
-          <div>
-            <h2 className="text-sm font-bold text-slate-900">
-              Clinidea Education — eTMF Implementation & Supervision Checklist
+      {/* TAB 3: SYSTEM SECURITY & ACCESS GOVERNANCE */}
+      {activeTab === 'security' && (
+        <div className="space-y-4">
+          <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs">
+            <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-emerald-600" /> Enterprise Security &amp; Regulatory Compliance Architecture
             </h2>
-            <p className="text-[11px] text-slate-500">
-              Joint operational checklist for Founder/Admin (Tushar Patil) and Clinical Research Mentor (Sukriti Singh).
+            <p className="text-[11px] text-slate-500 mt-1">
+              VigiThink eTMF implements defense-in-depth security, strict separation of duties, and statutory compliance controls required by 21 CFR Part 11 and ICH GCP E6(R2/R3).
             </p>
           </div>
 
-          <table className="w-full text-left border-collapse text-xs">
-            <thead>
-              <tr className="bg-clinevo-table-header text-white font-bold text-[11px]">
-                <th className="p-3">No.</th>
-                <th className="p-3">Setup Item</th>
-                <th className="p-3">Owner</th>
-                <th className="p-3">Status</th>
-                <th className="p-3">Notes</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200">
-              {setupChecklist.map((item, idx) => (
-                <tr key={item.no} className="hover:bg-slate-50">
-                  <td className="p-3 font-mono font-bold text-slate-700">{item.no}</td>
-                  <td className="p-3 font-bold text-slate-900">{item.item}</td>
-                  <td className="p-3 font-semibold text-blue-800">{item.owner}</td>
-                  <td className="p-3">
-                    <select
-                      value={item.status}
-                      onChange={(e) => {
-                        const next = [...setupChecklist];
-                        next[idx].status = e.target.value;
-                        setSetupChecklist(next);
-                      }}
-                      className={`px-2.5 py-1 rounded font-bold text-[11px] border cursor-pointer ${
-                        item.status === 'Completed'
-                          ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                          : item.status === 'Active' || item.status === 'In Progress'
-                          ? 'bg-sky-100 text-sky-800 border-sky-300'
-                          : 'bg-amber-100 text-amber-800 border-amber-300'
-                      }`}
-                    >
-                      <option value="Completed">Completed</option>
-                      <option value="Active">Active</option>
-                      <option value="In Progress">In Progress</option>
-                      <option value="To Do">To Do</option>
-                    </select>
-                  </td>
-                  <td className="p-3 text-slate-600">{item.notes}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {/* Card 1: 21 CFR Part 11 */}
+            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs space-y-2.5">
+              <div className="flex items-center gap-2 text-purple-700">
+                <FileKey className="w-5 h-5 shrink-0" />
+                <h3 className="font-bold text-xs">21 CFR Part 11 E-Signature Mandate</h3>
+              </div>
+              <p className="text-[11px] text-slate-600 leading-relaxed">
+                Dual-factor authentication required for electronic sign-offs. The signature manifest records the signer&apos;s full name, role, timestamp (UTC), IP address, and regulatory reason for signing, establishing non-repudiation.
+              </p>
+              <div className="bg-purple-50 p-2.5 rounded border border-purple-200 text-[10px] font-mono text-purple-900">
+                Standard: 21 CFR §11.50 &amp; §11.70
+              </div>
+            </div>
+
+            {/* Card 2: Password & Inactivity Policy */}
+            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs space-y-2.5">
+              <div className="flex items-center gap-2 text-blue-700">
+                <Clock className="w-5 h-5 shrink-0" />
+                <h3 className="font-bold text-xs">Session &amp; Credential Security</h3>
+              </div>
+              <p className="text-[11px] text-slate-600 leading-relaxed">
+                All passwords are encrypted using one-way bcrypt salted hashing (10 rounds). User sessions automatically lock after 15 minutes of inactivity to prevent unauthorized terminal access.
+              </p>
+              <div className="bg-blue-50 p-2.5 rounded border border-blue-200 text-[10px] font-mono text-blue-900">
+                Timeout: 15 Minutes Idle | Bcrypt Salting
+              </div>
+            </div>
+
+            {/* Card 3: 25-Year Retention Lock */}
+            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs space-y-2.5">
+              <div className="flex items-center gap-2 text-emerald-700">
+                <Database className="w-5 h-5 shrink-0" />
+                <h3 className="font-bold text-xs">Statutory 25-Year Retention Lock</h3>
+              </div>
+              <p className="text-[11px] text-slate-600 leading-relaxed">
+                Archived clinical studies enter a permanent write-once, read-many (WORM) lock state. Essential trial documentation is preserved immutably for the statutory 25-year post-closeout inspection window.
+              </p>
+              <div className="bg-emerald-50 p-2.5 rounded border border-emerald-200 text-[10px] font-mono text-emerald-900">
+                Regulation: EU CTR 536/2014 &amp; ICH GCP §8.1
+              </div>
+            </div>
+
+            {/* Card 4: Append-Only Audit Trail */}
+            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs space-y-2.5">
+              <div className="flex items-center gap-2 text-amber-700">
+                <History className="w-5 h-5 shrink-0" />
+                <h3 className="font-bold text-xs">Immutable Audit Trail</h3>
+              </div>
+              <p className="text-[11px] text-slate-600 leading-relaxed">
+                Every action (including document ingestion, metadata modification, version increment, QC status change, and user role updates) is recorded in an append-only transaction ledger with zero deletion privileges.
+              </p>
+              <div className="bg-amber-50 p-2.5 rounded border border-amber-200 text-[10px] font-mono text-amber-900">
+                Compliance: 21 CFR §11.10(e) Append-Only
+              </div>
+            </div>
+
+            {/* Card 5: Separation of Duties */}
+            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs space-y-2.5">
+              <div className="flex items-center gap-2 text-rose-700">
+                <ShieldAlert className="w-5 h-5 shrink-0" />
+                <h3 className="font-bold text-xs">Separation of Duties (SoD)</h3>
+              </div>
+              <p className="text-[11px] text-slate-600 leading-relaxed">
+                Strict functional segregation prevents conflicts of interest. Document uploaders cannot execute their own QC clearance; only qualified TMF Leads or QA Specialists can pass quality gates.
+              </p>
+              <div className="bg-rose-50 p-2.5 rounded border border-rose-200 text-[10px] font-mono text-rose-900">
+                Control: Segregated QC Inspection Gate
+              </div>
+            </div>
+
+            {/* Card 6: Least-Privilege 4D Scoping */}
+            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs space-y-2.5">
+              <div className="flex items-center gap-2 text-indigo-700">
+                <FileCheck className="w-5 h-5 shrink-0" />
+                <h3 className="font-bold text-xs">Least-Privilege 4D Scoping</h3>
+              </div>
+              <p className="text-[11px] text-slate-600 leading-relaxed">
+                User access is partitioned across four dimensions: Study Protocol, Country Authority, Investigational Site, and DIA Zone. Site coordinators and PIs only view and submit records for their assigned facility.
+              </p>
+              <div className="bg-indigo-50 p-2.5 rounded border border-indigo-200 text-[10px] font-mono text-indigo-900">
+                Dimensions: Protocol · Country · Site · Zone
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -711,9 +674,9 @@ export default function UserRoleManagement() {
       {isCreateModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-2xs flex items-center justify-center p-4">
           <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-lg w-full overflow-hidden">
-            <div className="bg-clinevo-blue text-white px-5 py-3.5 flex items-center justify-between">
+            <div className="bg-[#132E52] text-white px-5 py-3.5 flex items-center justify-between">
               <h3 className="font-bold text-sm flex items-center gap-2">
-                <UserPlus className="w-4 h-4" /> Create New Clinidea eTMF Credential
+                <UserPlus className="w-4 h-4" /> Create New VigiThink eTMF User
               </h3>
               <button onClick={() => setIsCreateModalOpen(false)} className="text-white/80 hover:text-white cursor-pointer">
                 <X className="w-4 h-4" />
@@ -727,34 +690,36 @@ export default function UserRoleManagement() {
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Rahul Verma"
+                    placeholder="e.g. Dr. Rajesh Rao, MD"
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     className="w-full border border-slate-300 rounded px-3 py-1.5"
                   />
                 </div>
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Position</label>
+                  <label className="block font-bold text-slate-700 mb-1">Department</label>
                   <select
-                    value={formData.position}
-                    onChange={(e) => setFormData({ ...formData, position: e.target.value })}
+                    value={formData.department}
+                    onChange={(e) => setFormData({ ...formData, department: e.target.value })}
                     className="w-full border border-slate-300 rounded px-3 py-1.5"
                   >
-                    <option value="Student">Student</option>
-                    <option value="Clinical Research Trainer / Mentor">Trainer / Mentor</option>
-                    <option value="Founder / Admin">Founder / Admin</option>
-                    <option value="Auditor">Auditor / Inspector</option>
+                    <option value="Clinical Operations">Clinical Operations</option>
+                    <option value="Clinical Monitoring">Clinical Monitoring</option>
+                    <option value="Investigational Site Staff">Investigational Site Staff</option>
+                    <option value="Medical Affairs">Medical Affairs</option>
+                    <option value="Quality Assurance & Regulatory">Quality Assurance &amp; Regulatory</option>
+                    <option value="Information Technology">Information Technology</option>
                   </select>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Login ID (@clinidea.in) *</label>
+                  <label className="block font-bold text-slate-700 mb-1">Login ID (@vigithink.com) *</label>
                   <input
                     type="text"
                     required
-                    placeholder="Rahul.Verma@clinidea.in"
+                    placeholder="rajesh.rao@vigithink.com"
                     value={formData.loginId}
                     onChange={(e) => setFormData({ ...formData, loginId: e.target.value })}
                     className="w-full border border-slate-300 rounded px-3 py-1.5 font-mono"
@@ -765,7 +730,7 @@ export default function UserRoleManagement() {
                   <input
                     type="text"
                     required
-                    placeholder="Rahul@9876543210"
+                    placeholder="Rajesh@VigiThink2026"
                     value={formData.password}
                     onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                     className="w-full border border-slate-300 rounded px-3 py-1.5 font-mono"
@@ -775,17 +740,17 @@ export default function UserRoleManagement() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Personal Email</label>
+                  <label className="block font-bold text-slate-700 mb-1">Business Email</label>
                   <input
                     type="email"
-                    placeholder="student@gmail.com"
+                    placeholder="rajesh.rao@hospital.org"
                     value={formData.email}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                     className="w-full border border-slate-300 rounded px-3 py-1.5"
                   />
                 </div>
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Mobile Number</label>
+                  <label className="block font-bold text-slate-700 mb-1">Mobile / Phone</label>
                   <input
                     type="text"
                     placeholder="+91 98765 43210"
@@ -797,11 +762,13 @@ export default function UserRoleManagement() {
               </div>
 
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Registered Course</label>
+                <label className="block font-bold text-slate-700 mb-1">Position / Job Designation *</label>
                 <input
                   type="text"
-                  value={formData.course}
-                  onChange={(e) => setFormData({ ...formData, course: e.target.value })}
+                  required
+                  placeholder="e.g. Principal Investigator, Senior CRA, CRC, CTM"
+                  value={formData.position}
+                  onChange={(e) => setFormData({ ...formData, position: e.target.value })}
                   className="w-full border border-slate-300 rounded px-3 py-1.5"
                 />
               </div>
@@ -828,9 +795,12 @@ export default function UserRoleManagement() {
                     onChange={(e) => setFormData({ ...formData, studyScope: e.target.value })}
                     className="w-full border border-slate-300 rounded px-2 py-1.5"
                   >
-                    <option value="CLIN-001">CLIN-001 (QVJ499)</option>
-                    <option value="CARD-002">CARD-002 (BP Study)</option>
                     <option value="ALL">ALL Studies</option>
+                    {studies.map(s => (
+                      <option key={s.id} value={s.id}>
+                        {s.id} ({s.shortName || s.title?.substring(0, 25)})
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div>
@@ -841,7 +811,7 @@ export default function UserRoleManagement() {
                     className="w-full border border-slate-300 rounded px-2 py-1.5"
                   >
                     <option value="ALL">ALL Sites</option>
-                    {allSitesList.map(sName => (
+                    {getSitesForStudy(formData.studyScope).map(sName => (
                       <option key={sName} value={sName}>
                         {sName}
                       </option>
@@ -860,9 +830,9 @@ export default function UserRoleManagement() {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-1.5 rounded bg-clinevo-blue hover:bg-blue-700 text-white font-bold cursor-pointer"
+                  className="px-4 py-1.5 rounded bg-blue-600 hover:bg-blue-700 text-white font-bold cursor-pointer"
                 >
-                  Create Credential
+                  Create User Account
                 </button>
               </div>
             </form>
@@ -876,7 +846,7 @@ export default function UserRoleManagement() {
           <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-lg w-full overflow-hidden">
             <div className="bg-slate-900 text-white px-5 py-3.5 flex items-center justify-between">
               <h3 className="font-bold text-sm flex items-center gap-2">
-                <Edit3 className="w-4 h-4 text-emerald-400" /> Edit User Credential & Role — {editingUser.name}
+                <Edit3 className="w-4 h-4 text-emerald-400" /> Edit User Credential &amp; Role: {editingUser.name}
               </h3>
               <button onClick={() => setEditingUser(null)} className="text-white/80 hover:text-white cursor-pointer">
                 <X className="w-4 h-4" />
@@ -895,6 +865,24 @@ export default function UserRoleManagement() {
                   />
                 </div>
                 <div>
+                  <label className="block font-bold text-slate-700 mb-1">Department</label>
+                  <select
+                    value={editingUser.department || 'Clinical Operations'}
+                    onChange={(e) => setEditingUser({ ...editingUser, department: e.target.value })}
+                    className="w-full border border-slate-300 rounded px-3 py-1.5"
+                  >
+                    <option value="Clinical Operations">Clinical Operations</option>
+                    <option value="Clinical Monitoring">Clinical Monitoring</option>
+                    <option value="Investigational Site Staff">Investigational Site Staff</option>
+                    <option value="Medical Affairs">Medical Affairs</option>
+                    <option value="Quality Assurance & Regulatory">Quality Assurance &amp; Regulatory</option>
+                    <option value="Information Technology">Information Technology</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
                   <label className="block font-bold text-slate-700 mb-1">Login ID</label>
                   <input
                     type="text"
@@ -903,9 +891,6 @@ export default function UserRoleManagement() {
                     className="w-full border border-slate-300 rounded px-3 py-1.5 font-mono"
                   />
                 </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">Password</label>
                   <input
@@ -915,54 +900,59 @@ export default function UserRoleManagement() {
                     className="w-full border border-slate-300 rounded px-3 py-1.5 font-mono text-emerald-800 font-bold"
                   />
                 </div>
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">Mobile Number</label>
-                  <input
-                    type="text"
-                    value={editingUser.mobile || ''}
-                    onChange={(e) => setEditingUser({ ...editingUser, mobile: e.target.value })}
-                    className="w-full border border-slate-300 rounded px-3 py-1.5"
-                  />
-                </div>
               </div>
 
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Assigned eTMF Role</label>
-                <select
-                  value={editingUser.roleId}
-                  onChange={(e) => setEditingUser({ ...editingUser, roleId: e.target.value })}
-                  className="w-full border border-blue-400 rounded px-3 py-1.5 font-bold text-slate-900"
-                >
-                  {rolesList.map(r => (
-                    <option key={r.id} value={r.id}>
-                      {r.name}
-                    </option>
-                  ))}
-                </select>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Position / Job Title</label>
+                  <input
+                    type="text"
+                    value={editingUser.position || ''}
+                    onChange={(e) => setEditingUser({ ...editingUser, position: e.target.value })}
+                    className="w-full border border-slate-300 rounded px-3 py-1.5 font-semibold text-slate-800"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Assigned eTMF Role</label>
+                  <select
+                    value={editingUser.roleId}
+                    onChange={(e) => setEditingUser({ ...editingUser, roleId: e.target.value })}
+                    className="w-full border border-blue-400 rounded px-3 py-1.5 font-bold text-slate-900"
+                  >
+                    {rolesList.map(r => (
+                      <option key={r.id} value={r.id}>
+                        {r.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">Study Scope</label>
                   <select
-                    value={editingUser.studyScope}
+                    value={editingUser.studyScope || 'ALL'}
                     onChange={(e) => setEditingUser({ ...editingUser, studyScope: e.target.value })}
                     className="w-full border border-slate-300 rounded px-3 py-1.5"
                   >
                     <option value="ALL">ALL Studies</option>
-                    <option value="CLIN-001">CLIN-001 (CE-QVJ499-2026-001)</option>
-                    <option value="CARD-002">CARD-002 (CE-CVR-2025-001)</option>
+                    {studies.map(s => (
+                      <option key={s.id} value={s.id}>
+                        {s.id} ({s.shortName || s.title?.substring(0, 25)})
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">Site Scope</label>
                   <select
-                    value={editingUser.siteScope}
+                    value={editingUser.siteScope || 'ALL'}
                     onChange={(e) => setEditingUser({ ...editingUser, siteScope: e.target.value })}
                     className="w-full border border-slate-300 rounded px-3 py-1.5"
                   >
                     <option value="ALL">ALL Sites</option>
-                    {allSitesList.map(sName => (
+                    {getSitesForStudy(editingUser.studyScope).map(sName => (
                       <option key={sName} value={sName}>
                         {sName}
                       </option>

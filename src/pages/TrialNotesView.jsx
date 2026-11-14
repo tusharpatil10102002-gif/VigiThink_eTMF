@@ -21,7 +21,7 @@ export default function TrialNotesView() {
     },
     {
       id: "NTF-2026-002",
-      title: "Monitor Visit Clarification Memo — Site 102 Pharmacy Temp Excursion",
+      title: "Monitor Visit Clarification Memo: Site 102 Pharmacy Temp Excursion",
       studyId: selectedStudyId,
       siteId: "SITE-102",
       author: "Amit Nakhe (CRA)",
@@ -86,11 +86,11 @@ export default function TrialNotesView() {
 
         <div className="flex items-center gap-2">
           <span className="px-3 py-1 bg-blue-50 text-blue-800 rounded border border-blue-300 font-mono font-bold">
-            Trial: {activeStudy.id}
+            Trial: {activeStudy?.id || 'None'}
           </span>
           <button
             onClick={() => setShowAddModal(true)}
-            className="px-3 py-1.5 bg-clinevo-blue hover:bg-blue-700 text-white rounded font-bold text-xs flex items-center gap-1 shadow-xs cursor-pointer"
+            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded font-bold text-xs flex items-center gap-1 shadow-xs cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" /> File New Note to File
           </button>
@@ -148,7 +148,7 @@ export default function TrialNotesView() {
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-lg w-full p-5 space-y-4 text-xs font-sans">
             <h3 className="font-bold text-slate-900 text-sm border-b pb-2">
-              File New Note to File (NTF) — {activeStudy.id}
+              File New Note to File (NTF): {activeStudy?.id || 'None'}
             </h3>
 
             <form onSubmit={handleCreateNote} className="space-y-3">
@@ -212,7 +212,7 @@ export default function TrialNotesView() {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-1.5 bg-clinevo-blue hover:bg-blue-700 text-white rounded font-bold shadow-xs cursor-pointer"
+                  className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded font-bold shadow-xs cursor-pointer"
                 >
                   Publish NTF to TMF
                 </button>

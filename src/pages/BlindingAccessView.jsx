@@ -85,32 +85,34 @@ export default function BlindingAccessView() {
           Historical Code-Break Audit Trail
         </h2>
 
-        <table className="w-full text-left text-xs border-collapse">
-          <thead>
-            <tr className="border-b border-slate-200 bg-slate-50 text-slate-600 font-mono text-[11px] uppercase">
-              <th className="p-3">Event Date</th>
-              <th className="p-3">Subject ID</th>
-              <th className="p-3">Unblinding Justification</th>
-              <th className="p-3">Approved By</th>
-              <th className="p-3 text-right">Audit Status</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 font-sans">
-            {unblindLog.map(u => (
-              <tr key={u.id} className="hover:bg-slate-50">
-                <td className="p-3 font-mono text-blue-700 font-bold">{u.date}</td>
-                <td className="p-3 font-bold font-mono text-slate-900">{u.subjectId}</td>
-                <td className="p-3 text-slate-700">{u.reason}</td>
-                <td className="p-3 font-semibold text-amber-800">{u.approvedBy}</td>
-                <td className="p-3 text-right">
-                  <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold text-[10px]">
-                    Part 11 Logged
-                  </span>
-                </td>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs border-collapse min-w-[650px]">
+            <thead>
+              <tr className="border-b border-slate-200 bg-slate-50 text-slate-600 font-mono text-[11px] uppercase">
+                <th className="p-3">Event Date</th>
+                <th className="p-3">Subject ID</th>
+                <th className="p-3">Unblinding Justification</th>
+                <th className="p-3">Approved By</th>
+                <th className="p-3 text-right">Audit Status</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-slate-100 font-sans">
+              {unblindLog.map(u => (
+                <tr key={u.id} className="hover:bg-slate-50">
+                  <td className="p-3 font-mono text-blue-700 font-bold">{u.date}</td>
+                  <td className="p-3 font-bold font-mono text-slate-900">{u.subjectId}</td>
+                  <td className="p-3 text-slate-700">{u.reason}</td>
+                  <td className="p-3 font-semibold text-amber-800">{u.approvedBy}</td>
+                  <td className="p-3 text-right">
+                    <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold text-[10px]">
+                      Part 11 Logged
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

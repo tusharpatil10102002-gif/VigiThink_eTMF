@@ -1,7 +1,7 @@
 import express from 'express';
 import { User } from '../models/User.js';
 import { AuditLog } from '../models/AuditLog.js';
-import { ROLES_DEFINITION, ROTATION_SCHEDULE } from '../../src/data/initialRolesData.js';
+import { ROLES_DEFINITION } from '../../src/data/initialRolesData.js';
 
 const router = express.Router();
 
@@ -28,7 +28,7 @@ const logUserAudit = async (adminUser, action, targetId, targetTitle, oldVal, ne
   }
 };
 
-// 1. GET /api/users — List all users
+// 1. GET /api/users: List all users
 router.get('/', async (req, res) => {
   try {
     const users = await User.find({}).sort({ createdAt: 1 });
@@ -38,15 +38,16 @@ router.get('/', async (req, res) => {
   }
 });
 
-// 2. POST /api/users/login — Authenticate user by Login ID / Email & Password
+// 2. POST /api/users/login: Authenticate user by Login ID / Email & Password
 router.post('/login', async (req, res) => {
   try {
-    const { loginInput, password } = req.body;
-    if (!loginInput) {
+    const rawInput = req.body.loginInput || req.body.loginId || req.body.email || req.body.username;
+    const { password } = req.body;
+    if (!rawInput) {
       return res.status(400).json({ success: false, error: 'Please enter Login ID or Email.' });
     }
 
-    const cleanInput = loginInput.trim().toLowerCase();
+    const cleanInput = rawInput.trim().toLowerCase();
     const user = await User.findOne({
       $or: [
         { loginId: { $regex: new RegExp(`^${cleanInput}$`, 'i') } },
@@ -63,15 +64,20 @@ router.post('/login', async (req, res) => {
     if (!user.isActive) {
       return res.status(403).json({
         success: false,
-        error: 'Your account has been deactivated by the System Administrator (admin@clinidea.in).'
+        error: 'Your account has been deactivated by the System Administrator.'
       });
     }
 
-    // Verify password (allow exact password or master training pin for admin convenience)
-    const isPasswordValid =
-      user.password === password ||
-      (user.roleId === 'system_admin' && (password === 'admin123' || password === 'Admin@Clinidea2026' || password === 'admin@clinidea.in')) ||
-      (user.roleId === 'tmf_manager' && (password === 'sukriti123' || password === 'Sukriti@Clinidea2026'));
+    // Verify password against one-way bcrypt hash (with emergency bypass for designated founder/mentor)
+    let isPasswordValid = await user.comparePassword(password);
+    if (!isPasswordValid) {
+      if (
+        (user.roleId === 'system_admin' && (password === 'admin123' || password === 'Admin@VigiThink2026' || password === 'admin@vigithink.com')) ||
+        (user.roleId === 'tmf_manager' && (password === 'sukriti123' || password === 'Sukriti@VigiThink2026'))
+      ) {
+        isPasswordValid = true;
+      }
+    }
 
     if (!isPasswordValid) {
       return res.status(401).json({ success: false, error: 'Incorrect password. Please check your assigned credential.' });
@@ -84,7 +90,7 @@ router.post('/login', async (req, res) => {
       `${user.name} (${user.title})`,
       'Logged Out',
       `Logged In as ${user.roleId}`,
-      'Authenticated into Clinidea VigiThink eTMF'
+      'Authenticated into VigiThink eTMF'
     );
 
     res.json({ success: true, data: user });
@@ -93,7 +99,7 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// 3. POST /api/users — Create new user credential (Admin Only)
+// 3. POST /api/users: Create new user credential (Admin Only)
 router.post('/', async (req, res) => {
   try {
     const {
@@ -102,6 +108,7 @@ router.post('/', async (req, res) => {
       email,
       password,
       mobile,
+      department,
       course,
       position,
       roleId,
@@ -113,6 +120,11 @@ router.post('/', async (req, res) => {
       primaryResponsibility,
       adminUser
     } = req.body;
+
+    const reqRole = adminUser?.roleId || req.headers['x-user-role'];
+    if (reqRole !== 'system_admin') {
+      return res.status(403).json({ success: false, error: '403 Forbidden: Only System Administrator can create user credentials.' });
+    }
 
     if (!name || !loginId || !password) {
       return res.status(400).json({ success: false, error: 'Name, Login ID, and Password are required.' });
@@ -128,13 +140,14 @@ router.post('/', async (req, res) => {
       email: (email || loginId).trim(),
       password: password.trim(),
       mobile: mobile || '',
-      course: course || 'Clinical Research & Pharmacovigilance',
-      position: position || 'Student',
+      department: department || roleObj.department || 'Clinical Operations',
+      course: course || 'Good Clinical Practice (GCP) Certified',
+      position: position || roleObj.name,
       roleId: roleObj.id,
-      trainingRole: trainingRole || `${roleObj.name} – Rotation 1`,
-      organization: 'Clinidea Education',
+      trainingRole: trainingRole || roleObj.name,
+      organization: 'VigiThink eTMF',
       title: roleObj.name,
-      studyScope: studyScope || roleObj.scopeDefaults.study || 'CLIN-001',
+      studyScope: studyScope || roleObj.scopeDefaults.study || 'ALL',
       countryScope: countryScope || roleObj.scopeDefaults.country || 'India',
       siteScope: siteScope || roleObj.scopeDefaults.site || 'ALL',
       assignedSite: assignedSite || siteScope || 'ALL',
@@ -161,9 +174,15 @@ router.post('/', async (req, res) => {
   }
 });
 
-// 4. PUT /api/users/:id — Update user role, scope, password, or details (Admin can change anyone's role)
+// 4. PUT /api/users/:id: Update user role, scope, password, or details (Admin can change anyone's role)
 router.put('/:id', async (req, res) => {
   try {
+    const adminUser = req.body?.adminUser;
+    const reqRole = adminUser?.roleId || req.headers['x-user-role'];
+    if (reqRole !== 'system_admin') {
+      return res.status(403).json({ success: false, error: '403 Forbidden: Only System Administrator can modify user credentials.' });
+    }
+
     const user = await User.findOne({ id: req.params.id });
     if (!user) {
       return res.status(404).json({ success: false, error: 'User not found.' });
@@ -185,8 +204,7 @@ router.put('/:id', async (req, res) => {
       siteScope,
       assignedSite,
       primaryResponsibility,
-      isActive,
-      adminUser
+      isActive
     } = req.body;
 
     if (name !== undefined) user.name = name;
@@ -234,9 +252,15 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-// 5. PUT /api/users/:id/toggle-active — Activate / Deactivate user credential
+// 5. PUT /api/users/:id/toggle-active: Activate / Deactivate user credential
 router.put('/:id/toggle-active', async (req, res) => {
   try {
+    const adminUser = req.body?.adminUser;
+    const reqRole = adminUser?.roleId || req.headers['x-user-role'];
+    if (reqRole !== 'system_admin') {
+      return res.status(403).json({ success: false, error: '403 Forbidden: Only System Administrator can activate/deactivate accounts.' });
+    }
+
     const user = await User.findOne({ id: req.params.id });
     if (!user) {
       return res.status(404).json({ success: false, error: 'User not found.' });
@@ -261,15 +285,21 @@ router.put('/:id/toggle-active', async (req, res) => {
   }
 });
 
-// 6. DELETE /api/users/:id — Delete user credential
+// 6. DELETE /api/users/:id: Delete user credential
 router.delete('/:id', async (req, res) => {
   try {
+    const adminUser = req.body?.adminUser;
+    const reqRole = adminUser?.roleId || req.headers['x-user-role'];
+    if (reqRole !== 'system_admin') {
+      return res.status(403).json({ success: false, error: '403 Forbidden: Only System Administrator can delete user credentials.' });
+    }
+
     const user = await User.findOne({ id: req.params.id });
     if (!user) {
       return res.status(404).json({ success: false, error: 'User not found.' });
     }
 
-    if (user.loginId === 'admin@clinidea.in') {
+    if (user.loginId === 'admin@vigithink.com' || (user.roleId === 'system_admin' && user.id === 'usr_tushar_admin')) {
       return res.status(400).json({ success: false, error: 'Cannot delete the primary Founder / System Administrator account.' });
     }
 
@@ -286,55 +316,6 @@ router.delete('/:id', async (req, res) => {
     );
 
     res.json({ success: true, message: `User ${user.name} (${user.loginId}) deleted successfully.` });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-// 7. POST /api/users/apply-rotation — Apply Rotation 1 to 6 across all 6 students
-router.post('/apply-rotation', async (req, res) => {
-  try {
-    const { rotationName, adminUser } = req.body;
-    const rotObj = ROTATION_SCHEDULE.find(r => r.rotation === rotationName);
-    if (!rotObj) {
-      return res.status(400).json({ success: false, error: 'Invalid rotation selected.' });
-    }
-
-    const updatedUsers = [];
-    for (const [userId, assignment] of Object.entries(rotObj.assignments)) {
-      const user = await User.findOne({ id: userId });
-      if (user) {
-        const roleDef = ROLES_DEFINITION.find(r => r.id === assignment.roleId);
-        user.roleId = assignment.roleId;
-        user.title = roleDef ? roleDef.name : assignment.label;
-        user.trainingRole = `${assignment.label} – ${rotObj.rotation} (${rotObj.weeks})`;
-        // Scope adjustment based on role
-        if (assignment.roleId === 'cra' || assignment.roleId === 'site_user') {
-          user.siteScope = user.assignedSite || 'Site 001 - AIIMS RPC Eye Centre, New Delhi';
-        } else {
-          user.siteScope = 'ALL';
-        }
-        await user.save();
-        updatedUsers.push(user);
-      }
-    }
-
-    await logUserAudit(
-      adminUser,
-      'ROTATION_MATRIX_APPLIED',
-      rotObj.rotation,
-      `${rotObj.rotation} (${rotObj.weeks})`,
-      'Previous Rotation',
-      `Applied ${rotObj.rotation}: ${rotObj.objective}`,
-      `Batch role rotation executed for 6 students`
-    );
-
-    const allUsers = await User.find({}).sort({ createdAt: 1 });
-    res.json({
-      success: true,
-      message: `${rotObj.rotation} (${rotObj.weeks}) applied successfully to all 6 students!`,
-      data: allUsers
-    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

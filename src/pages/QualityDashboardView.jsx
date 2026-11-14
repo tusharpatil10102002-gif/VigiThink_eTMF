@@ -25,7 +25,7 @@ export default function QualityDashboardView() {
             TMF Quality Metrics & Zone Compliance
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Active Study: {activeStudy.id} ({activeStudy.shortName}) · Real-time ALCOA+ & SOP-TMF-04 Quality Overview
+            Active Study: {activeStudy?.id || 'None'} ({activeStudy?.shortName || 'No Active Study'}) · Real-time ALCOA+ & SOP-TMF-04 Quality Overview
           </p>
         </div>
 
@@ -88,7 +88,7 @@ export default function QualityDashboardView() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
+          <table className="w-full text-left border-collapse text-xs min-w-[700px]">
             <thead>
               <tr className="bg-slate-50/80 text-slate-500 font-semibold text-[11px] uppercase tracking-wider border-b border-slate-200">
                 <th className="p-3.5">DIA Zone</th>

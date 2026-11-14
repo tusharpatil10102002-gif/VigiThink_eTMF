@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useTMFData } from '../context/TMFDataContext';
+import { useAuth } from '../context/AuthContext';
 import { FileSpreadsheet, CheckCircle2, AlertTriangle, Plus, Sparkles, Filter, Search, Eye, Upload } from 'lucide-react';
 import AddPlaceholderModal from '../components/document/AddPlaceholderModal';
 import DocumentViewerDrawer from '../components/document/DocumentViewerDrawer';
@@ -7,6 +8,7 @@ import UploadWizardModal from '../components/document/UploadWizardModal';
 
 export default function ExpectedDocumentList() {
   const { documents, activeStudy, selectedStudyId } = useTMFData();
+  const { isDocumentInScope, canUpload, hasPermission } = useAuth();
   const [levelFilter, setLevelFilter] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [search, setSearch] = useState("");
@@ -14,7 +16,7 @@ export default function ExpectedDocumentList() {
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [selectedDoc, setSelectedDoc] = useState(null);
 
-  const studyDocs = documents.filter(d => d.study_id === selectedStudyId);
+  const studyDocs = documents.filter(d => d.study_id === selectedStudyId && isDocumentInScope(d));
   const effectiveDocs = studyDocs.filter(d => d.status === 'Effective' || d.status === 'Approved');
   const missingPlaceholders = studyDocs.filter(d => d.status === 'Placeholder');
   const inReviewDocs = studyDocs.filter(d => d.status === 'Draft' || d.qc_status === 'In Progress');
@@ -46,26 +48,30 @@ export default function ExpectedDocumentList() {
         <div>
           <h1 className="text-lg font-bold text-slate-900 flex items-center gap-2">
             <FileSpreadsheet className="w-5 h-5 text-blue-700" />
-            Expected Document List (EDL), File Plan & Gap Analysis Engine
+            Expected Document List (EDL) &amp; Gap Analysis
           </h1>
           <p className="text-xs text-slate-500 font-mono">
-            Module 6, 8 & 11: Dynamic tracking of Study-Level, Country-Level, and Site-Level required artifacts vs filed records
+            Tracking of Study-Level, Country-Level, and Site-Level required artifacts vs filed records
           </p>
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowAddPlaceholder(true)}
-            className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded font-bold text-xs flex items-center gap-1 shadow-xs cursor-pointer"
-          >
-            <Plus className="w-3.5 h-3.5" /> Add Expected Placeholder
-          </button>
-          <button
-            onClick={() => setShowUploadModal(true)}
-            className="px-3 py-1.5 bg-clinevo-blue hover:bg-blue-700 text-white rounded font-bold text-xs flex items-center gap-1 shadow-xs cursor-pointer"
-          >
-            <Upload className="w-3.5 h-3.5" /> Upload File to Fulfill Gap
-          </button>
+          {hasPermission('manageFolders') && (
+            <button
+              onClick={() => setShowAddPlaceholder(true)}
+              className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded font-bold text-xs flex items-center gap-1 shadow-xs cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" /> Add Expected Placeholder
+            </button>
+          )}
+          {canUpload && (
+            <button
+              onClick={() => setShowUploadModal(true)}
+              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded font-bold text-xs flex items-center gap-1 shadow-xs cursor-pointer"
+            >
+              <Upload className="w-3.5 h-3.5" /> Upload File to Fulfill Gap
+            </button>
+          )}
         </div>
       </div>
 
@@ -146,7 +152,7 @@ export default function ExpectedDocumentList() {
         <div className="flex items-center justify-between border-b border-slate-200 pb-2">
           <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
             <FileSpreadsheet className="w-4 h-4 text-blue-600" />
-            Expected Document Gap Matrix — {activeStudy.id} ({activeStudy.shortName})
+            Expected Document Gap Matrix: {activeStudy?.id || 'No Active Study'} ({activeStudy?.shortName || 'None'})
           </h2>
           <span className="text-[11px] text-slate-500 font-mono">Showing {filteredDocs.length} Records</span>
         </div>

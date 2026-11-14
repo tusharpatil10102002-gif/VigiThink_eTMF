@@ -25,42 +25,44 @@ export default function VersionControlView() {
           Active Document Checkout Locks ({lockedDocs.length})
         </h2>
 
-        <table className="w-full text-left text-xs border-collapse">
-          <thead>
-            <tr className="border-b border-slate-200 bg-slate-50 text-slate-600 font-mono text-[11px] uppercase">
-              <th className="p-3">Document Title</th>
-              <th className="p-3">Version</th>
-              <th className="p-3">Lock Holder User</th>
-              <th className="p-3">Lock Acquired Time</th>
-              <th className="p-3">Auto-Release Timer</th>
-              <th className="p-3 text-right">Lock Status</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 font-sans">
-            {lockedDocs.length === 0 ? (
-              <tr>
-                <td colSpan={6} className="p-6 text-center text-slate-400 italic">
-                  No active document locks. All documents checked in.
-                </td>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs border-collapse min-w-[700px]">
+            <thead>
+              <tr className="border-b border-slate-200 bg-slate-50 text-slate-600 font-mono text-[11px] uppercase">
+                <th className="p-3">Document Title</th>
+                <th className="p-3">Version</th>
+                <th className="p-3">Lock Holder User</th>
+                <th className="p-3">Lock Acquired Time</th>
+                <th className="p-3">Auto-Release Timer</th>
+                <th className="p-3 text-right">Lock Status</th>
               </tr>
-            ) : (
-              lockedDocs.map(d => (
-                <tr key={d.document_id} className="hover:bg-slate-50">
-                  <td className="p-3 font-bold text-slate-900">{d.document_title}</td>
-                  <td className="p-3 font-mono text-blue-700 font-bold">v{d.version_number}</td>
-                  <td className="p-3 font-semibold text-rose-700">{d.uploaded_by_name || 'Active User'}</td>
-                  <td className="p-3 font-mono text-slate-600">2026-08-16 10:15 UTC</td>
-                  <td className="p-3 font-mono text-amber-700">Auto-expires in 45m</td>
-                  <td className="p-3 text-right">
-                    <span className="px-2.5 py-1 rounded bg-rose-100 text-rose-800 border border-rose-300 font-bold text-xs">
-                      Checked Out (Exclusive)
-                    </span>
+            </thead>
+            <tbody className="divide-y divide-slate-100 font-sans">
+              {lockedDocs.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="p-6 text-center text-slate-400 italic">
+                    No active document locks. All documents checked in.
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              ) : (
+                lockedDocs.map(d => (
+                  <tr key={d.document_id} className="hover:bg-slate-50">
+                    <td className="p-3 font-bold text-slate-900">{d.document_title}</td>
+                    <td className="p-3 font-mono text-blue-700 font-bold">v{d.version_number}</td>
+                    <td className="p-3 font-semibold text-rose-700">{d.uploaded_by_name || 'Active User'}</td>
+                    <td className="p-3 font-mono text-slate-600">2026-08-16 10:15 UTC</td>
+                    <td className="p-3 font-mono text-amber-700">Auto-expires in 45m</td>
+                    <td className="p-3 text-right">
+                      <span className="px-2.5 py-1 rounded bg-rose-100 text-rose-800 border border-rose-300 font-bold text-xs">
+                        Checked Out (Exclusive)
+                      </span>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* Redline Version Diff Simulator */}

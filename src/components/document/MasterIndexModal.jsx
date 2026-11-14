@@ -54,11 +54,11 @@ export default function MasterIndexModal({ onClose }) {
       <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-4xl w-full h-[80vh] flex flex-col overflow-hidden text-xs font-sans">
         
         {/* Header */}
-        <div className="bg-clinevo-header text-white px-5 py-3 flex items-center justify-between">
+        <div className="bg-[#0B2240] text-white px-5 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <ListOrdered className="w-5 h-5 text-amber-400" />
             <div>
-              <h3 className="font-bold text-sm">DIA TMF Reference Model v3.1 — Master Index</h3>
+              <h3 className="font-bold text-sm">DIA TMF Reference Model v3.1: Master Index</h3>
               <p className="text-[10px] text-blue-200 font-mono">Standardized Clinical Trial Artifact Taxonomy (11 Zones / Sections / Artifacts)</p>
             </div>
           </div>
@@ -95,7 +95,7 @@ export default function MasterIndexModal({ onClose }) {
         <div className="flex-1 overflow-auto p-4">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
-              <tr className="bg-clinevo-table-header text-white font-bold text-[11px] sticky top-0">
+              <tr className="bg-[#132E52] text-white font-bold text-[11px] sticky top-0">
                 <th className="p-2 border border-blue-800">Artifact ID</th>
                 <th className="p-2 border border-blue-800">Artifact Name</th>
                 <th className="p-2 border border-blue-800">Zone</th>

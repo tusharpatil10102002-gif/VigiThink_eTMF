@@ -1,15 +1,17 @@
 import React, { useState } from 'react';
 import { useTMFData } from '../context/TMFDataContext';
+import { useAuth } from '../context/AuthContext';
 import { Package, Search, Download, Barcode, ShieldCheck, MapPin, Box, Filter } from 'lucide-react';
 import DocumentViewerDrawer from '../components/document/DocumentViewerDrawer';
 
 export default function InventoryView() {
   const { documents, selectedStudyId, activeStudy, downloadDocumentFile } = useTMFData();
+  const { isDocumentInScope, hasPermission } = useAuth();
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState("ALL");
   const [selectedDoc, setSelectedDoc] = useState(null);
 
-  const studyDocs = documents.filter(d => d.study_id === selectedStudyId);
+  const studyDocs = documents.filter(d => d.study_id === selectedStudyId && isDocumentInScope(d));
   const certifiedCopies = studyDocs.filter(d => d.is_certified_copy);
   const electronicNative = studyDocs.filter(d => !d.is_certified_copy);
 
@@ -34,13 +36,13 @@ export default function InventoryView() {
             TMF Inventory, Physical & Electronic Repository Manager
           </h1>
           <p className="text-xs text-slate-500 font-mono">
-            Module 11 & Storage Tracking: Master index of certified copies, physical archive barcodes, and long-term retention boxes
+            Master index of certified copies, physical archive barcodes, and long-term retention boxes
           </p>
         </div>
 
         <div className="flex items-center gap-2 font-mono">
           <span className="px-3 py-1 bg-teal-50 text-teal-800 rounded border border-teal-200 font-bold">
-            Trial: {activeStudy.id}
+            Trial: {activeStudy?.id || 'None'}
           </span>
           <span className="px-3 py-1 bg-slate-100 text-slate-700 rounded border border-slate-300">
             Total Inventory: {studyDocs.length} Items
@@ -158,12 +160,14 @@ export default function InventoryView() {
                     {doc.retention_end_date || '2051-01-01'}
                   </td>
                   <td className="p-3 text-right">
-                    <button
-                      onClick={() => downloadDocumentFile(doc)}
-                      className="px-2.5 py-1 bg-teal-50 hover:bg-teal-100 text-teal-800 rounded border border-teal-200 text-xs font-semibold cursor-pointer"
-                    >
-                      Manifest
-                    </button>
+                    {hasPermission('download') && (
+                      <button
+                        onClick={() => downloadDocumentFile(doc)}
+                        className="px-2.5 py-1 bg-teal-50 hover:bg-teal-100 text-teal-800 rounded border border-teal-200 text-xs font-semibold cursor-pointer"
+                      >
+                        Manifest
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}

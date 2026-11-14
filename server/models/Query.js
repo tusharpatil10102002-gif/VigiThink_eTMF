@@ -9,7 +9,7 @@ const QuerySchema = new mongoose.Schema({
   raised_by_id: { type: String, required: true },
   raised_by_name: { type: String, required: true },
   raised_date: { type: String, default: () => new Date().toISOString() },
-  status: { type: String, enum: ['Open', 'In Progress', 'Resolved', 'Closed'], default: 'Open' },
+  status: { type: String, enum: ['Open', 'In Progress', 'Response Provided', 'Under Review', 'Resolved', 'Closed'], default: 'Open' },
   response: { type: String, default: '' },
   resolved_by_name: { type: String },
   resolved_date: { type: String }

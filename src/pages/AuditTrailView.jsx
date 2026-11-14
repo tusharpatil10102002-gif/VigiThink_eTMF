@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useTMFData } from '../context/TMFDataContext';
-import { History, Download, ShieldCheck, Search, Filter, Lock } from 'lucide-react';
+import { History, Download, Search, Filter } from 'lucide-react';
 
 export default function AuditTrailView() {
   const { auditLogs, selectedStudyId, exportAuditTrailCsv } = useTMFData();
@@ -14,10 +14,6 @@ export default function AuditTrailView() {
     return true;
   });
 
-  const handleExportAuditTrail = () => {
-    exportAuditTrailCsv();
-  };
-
   return (
     <div className="p-6 space-y-6 bg-slate-50 min-h-full">
       <div className="flex items-center justify-between">
@@ -30,7 +26,7 @@ export default function AuditTrailView() {
         </div>
 
         <button
-          onClick={handleExportAuditTrail}
+          onClick={exportAuditTrailCsv}
           className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-sm cursor-pointer"
         >
           <Download className="w-3.5 h-3.5" /> Export Audit Trail (PDF / CSV)
@@ -79,47 +75,49 @@ export default function AuditTrailView() {
           </span>
         </div>
 
-        <table className="w-full text-left text-xs border-collapse">
-          <thead>
-            <tr className="border-b border-slate-200 bg-slate-50 text-slate-600 font-mono text-[11px] uppercase">
-              <th className="p-3">Timestamp (UTC)</th>
-              <th className="p-3">User & Role</th>
-              <th className="p-3">Action Event</th>
-              <th className="p-3">Target Object</th>
-              <th className="p-3">State Change (Old → New)</th>
-              <th className="p-3">IP Address</th>
-              <th className="p-3">Reason for Change</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 font-sans">
-            {filteredLogs.map(log => (
-              <tr key={log.id} className="hover:bg-slate-50">
-                <td className="p-3 font-mono text-[11px] text-blue-700 font-semibold whitespace-nowrap">
-                  {log.timestamp.replace('T', ' ').substring(0, 19)}
-                </td>
-                <td className="p-3">
-                  <p className="font-bold text-slate-900">{log.user_name}</p>
-                  <p className="text-[10px] text-slate-500 font-mono">{log.user_role}</p>
-                </td>
-                <td className="p-3">
-                  <span className="px-2 py-0.5 rounded text-[10px] font-bold font-mono bg-blue-100 text-blue-800 border border-blue-300">
-                    {log.action}
-                  </span>
-                </td>
-                <td className="p-3">
-                  <p className="font-semibold text-slate-800 truncate max-w-[180px]">{log.target_title}</p>
-                  <p className="text-[10px] text-slate-400 font-mono">{log.target_id}</p>
-                </td>
-                <td className="p-3 font-mono text-[11px] text-slate-600">
-                  <p className="text-rose-600 line-through text-[10px]">{log.old_value}</p>
-                  <p className="text-emerald-700 font-bold">{log.new_value}</p>
-                </td>
-                <td className="p-3 font-mono text-slate-600">{log.ip_address}</td>
-                <td className="p-3 text-slate-700 italic text-[11px]">{log.reason}</td>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs border-collapse min-w-[750px]">
+            <thead>
+              <tr className="border-b border-slate-200 bg-slate-50 text-slate-600 font-mono text-[11px] uppercase">
+                <th className="p-3">Timestamp (UTC)</th>
+                <th className="p-3">User &amp; Role</th>
+                <th className="p-3">Action Event</th>
+                <th className="p-3">Target Object</th>
+                <th className="p-3">State Change (Old → New)</th>
+                <th className="p-3">IP Address</th>
+                <th className="p-3">Reason for Change</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-slate-100 font-sans">
+              {filteredLogs.map(log => (
+                <tr key={log.id} className="hover:bg-slate-50">
+                  <td className="p-3 font-mono text-[11px] text-blue-700 font-semibold whitespace-nowrap">
+                    {log.timestamp.replace('T', ' ').substring(0, 19)}
+                  </td>
+                  <td className="p-3">
+                    <p className="font-bold text-slate-900">{log.user_name}</p>
+                    <p className="text-[10px] text-slate-500 font-mono">{log.user_role}</p>
+                  </td>
+                  <td className="p-3">
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold font-mono bg-blue-100 text-blue-800 border border-blue-300">
+                      {log.action}
+                    </span>
+                  </td>
+                  <td className="p-3">
+                    <p className="font-semibold text-slate-800 truncate max-w-[180px]">{log.target_title}</p>
+                    <p className="text-[10px] text-slate-400 font-mono">{log.target_id}</p>
+                  </td>
+                  <td className="p-3 font-mono text-[11px] text-slate-600">
+                    <p className="text-rose-600 line-through text-[10px]">{log.old_value}</p>
+                    <p className="text-emerald-700 font-bold">{log.new_value}</p>
+                  </td>
+                  <td className="p-3 font-mono text-slate-600">{log.ip_address}</td>
+                  <td className="p-3 text-slate-700 italic text-[11px]">{log.reason}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

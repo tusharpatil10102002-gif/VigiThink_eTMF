@@ -6,8 +6,8 @@ import { INITIAL_DOCUMENTS, INITIAL_AUDIT_LOGS } from '../data/initialDocumentsD
 const TMFDataContext = createContext();
 
 export const TMFDataProvider = ({ children }) => {
-  const [studies, setStudies] = useState(INITIAL_STUDIES);
-  const [selectedStudyId, setSelectedStudyId] = useState("CLIN-001");
+  const [studies, setStudies] = useState([]);
+  const [selectedStudyId, setSelectedStudyId] = useState("");
   const [documents, setDocuments] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
   const [milestones, setMilestones] = useState([]);
@@ -43,6 +43,11 @@ export const TMFDataProvider = ({ children }) => {
         if (studiesJson.success && Array.isArray(studiesJson.data)) {
           setStudies(studiesJson.data);
           setIsBackendConnected(true);
+          if (studiesJson.data.length > 0) {
+            setSelectedStudyId(prev => (prev && studiesJson.data.some(s => s.id === prev)) ? prev : studiesJson.data[0].id);
+          } else {
+            setSelectedStudyId("");
+          }
         }
       }
 
@@ -126,23 +131,6 @@ export const TMFDataProvider = ({ children }) => {
     return false;
   };
 
-  // Reset / Restore demo test data
-  const resetDemoData = async () => {
-    try {
-      const res = await fetch('/api/system/reset-demo', {
-        method: 'POST'
-      });
-      const data = await res.json();
-      if (data.success) {
-        await fetchAllData();
-        return true;
-      }
-    } catch (e) {
-      console.error('Error resetting demo data:', e);
-    }
-    return false;
-  };
-
   useEffect(() => {
     fetchAllData();
     const interval = setInterval(fetchAllData, 8000); // Live sync polling
@@ -150,12 +138,7 @@ export const TMFDataProvider = ({ children }) => {
   }, [selectedStudyId]);
 
   // Active study
-  const activeStudy = studies.find(s => s.id === selectedStudyId) || studies[0] || {
-    id: selectedStudyId || "CLIN-001",
-    shortName: "Clinidea Trial Protocol",
-    title: "Phase III Pivotal Clinical Study",
-    countries: []
-  };
+  const activeStudy = studies.find(s => s.id === selectedStudyId) || studies[0] || null;
 
   // Helper to log Part 11 Audit Trail event
   const logAuditEvent = async (user, action, targetType, targetId, targetTitle, studyId, oldValue, newValue, reason) => {
@@ -163,7 +146,7 @@ export const TMFDataProvider = ({ children }) => {
       id: `aud_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       timestamp: new Date().toISOString(),
       user_id: user?.id || "sys_user",
-      user_name: user?.name || "Clinidea User",
+      user_name: user?.name || "VigiThink User",
       user_role: user?.roleId || "system",
       action,
       target_type: targetType,
@@ -212,6 +195,36 @@ export const TMFDataProvider = ({ children }) => {
         formData.append('is_placeholder', docData.is_placeholder ? 'true' : 'false');
         formData.append('is_certified_copy', docData.is_certified_copy ? 'true' : 'false');
         formData.append('source_type', docData.source_type || 'Electronic Native');
+
+        // Segregation of Duties (ICH GCP E6 / Maker-Checker): Uploader cannot assign themselves as reviewer
+        let safeRevId = docData.assigned_reviewer_id;
+        let safeRevName = docData.assigned_reviewer_name;
+        let safeRevRole = docData.assigned_reviewer_role;
+
+        if (
+          !safeRevId || 
+          safeRevId === user?.id || 
+          (user?.name && safeRevName && safeRevName.toLowerCase().includes(user.name.toLowerCase()))
+        ) {
+          if (user?.roleId === 'tmf_manager' || (user?.name && user.name.toLowerCase().includes('sukriti'))) {
+            safeRevId = 'usr_gourish';
+            safeRevName = 'Gourish Chouksey (QA / QC Specialist)';
+            safeRevRole = 'qa';
+          } else {
+            safeRevId = 'usr_sukriti_mentor';
+            safeRevName = 'Sukriti Singh (TMF Lead)';
+            safeRevRole = 'tmf_manager';
+          }
+        }
+
+        formData.append('assigned_reviewer_id', safeRevId);
+        formData.append('assigned_reviewer_name', safeRevName);
+        formData.append('assigned_reviewer_role', safeRevRole);
+        formData.append('submission_notes', docData.submission_notes || '');
+        formData.append('workflow_action', docData.workflow_action || 'Submit for QC Review');
+        formData.append('submitted_by_id', user?.id || 'usr_demo');
+        formData.append('submitted_by_name', user?.name || 'VigiThink User');
+        formData.append('submitted_by_role', user?.roleId || 'site_user');
         formData.append('user', JSON.stringify(user));
 
         const res = await fetch('/api/documents/upload', {
@@ -245,6 +258,18 @@ export const TMFDataProvider = ({ children }) => {
         filing_date: new Date().toISOString().split('T')[0],
         uploaded_by_id: user?.id,
         uploaded_by_name: user?.name,
+        assigned_reviewer_id: safeRevId,
+        assigned_reviewer_name: safeRevName,
+        assigned_reviewer_role: safeRevRole,
+        submitted_by_id: user?.id,
+        submitted_by_name: user?.name,
+        submitted_by_role: user?.roleId || 'site_user',
+        submitted_date: new Date().toISOString(),
+        submission_notes: docData.submission_notes || '',
+        workflow_action: docData.workflow_action || 'Submit for QC Review',
+        lifecycle_stage: docData.is_placeholder ? 1 : (docData.workflow_action === 'Submit for QC Review' ? 6 : 5),
+        lifecycle_stage_name: docData.is_placeholder ? '1. Document Creation' : (docData.workflow_action === 'Submit for QC Review' ? '6. Quality Control (QC)' : '5. Metadata Entry'),
+        lifecycle_status: docData.is_placeholder ? 'Placeholder Created' : (docData.workflow_action === 'Submit for QC Review' ? `Pending QC Review (${safeRevName || 'TMF Lead'})` : 'Metadata Validated - Draft'),
         status: docData.is_placeholder ? 'Placeholder' : 'Draft',
         version_number: docData.is_placeholder ? '0.0' : '0.1',
         qc_status: docData.is_placeholder ? 'Not Started' : 'In Progress',
@@ -302,12 +327,22 @@ export const TMFDataProvider = ({ children }) => {
       if (doc.document_id === docId) {
         let newScore = "Green";
         let newDocStatus = doc.status;
+        let newLifecycleStage = doc.lifecycle_stage || 5;
+        let newLifecycleName = doc.lifecycle_stage_name || '5. Metadata Entry';
+        let newLifecycleStatus = doc.lifecycle_status;
+
         if (qcStatus === 'Passed') {
           newScore = "Green";
           newDocStatus = "Approved";
+          newLifecycleStage = 9;
+          newLifecycleName = '9. TMF Filing';
+          newLifecycleStatus = 'TMF Filed & Approved';
         } else if (qcStatus === 'Failed' || qcStatus === 'Query Raised') {
           newScore = "Red";
           newDocStatus = qcStatus === 'Failed' ? "Rejected/Correction" : "Draft";
+          newLifecycleStage = 7;
+          newLifecycleName = '7. QC Review Outcome';
+          newLifecycleStatus = 'Rejected / Rework Required';
         }
         return {
           ...doc,
@@ -318,6 +353,9 @@ export const TMFDataProvider = ({ children }) => {
           qc_reviewer_name: user?.name || 'QC Reviewer',
           qc_score: newScore,
           status: newDocStatus,
+          lifecycle_stage: newLifecycleStage,
+          lifecycle_stage_name: newLifecycleName,
+          lifecycle_status: newLifecycleStatus,
           quality_issue_flag: qcStatus === 'Failed' || qcStatus === 'Query Raised',
           quality_issue_type: finalIssueType
         };
@@ -388,7 +426,10 @@ export const TMFDataProvider = ({ children }) => {
           approver_id: user?.id,
           approver_name: user?.name,
           signature_type: 'Electronic (Part 11)',
-          qc_score: 'Green'
+          qc_score: 'Green',
+          lifecycle_stage: 10,
+          lifecycle_stage_name: '10. Monitoring & Inspection Readiness',
+          lifecycle_status: 'Inspection Ready & Verified'
         };
       }
       return doc;
@@ -412,6 +453,26 @@ export const TMFDataProvider = ({ children }) => {
         "Effective", 
         `Part 11 E-Signature applied: ${signerMeaning}`
       );
+    }
+  };
+
+  // Advance 11-step lifecycle workflow stage
+  const advanceDocumentLifecycle = async (docId, targetStage, notes, status, user) => {
+    try {
+      const res = await fetch(`/api/documents/${docId}/lifecycle`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetStage, notes, status, user })
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.data) {
+          setDocuments(prev => prev.map(d => d.document_id === docId ? json.data : d));
+          return json.data;
+        }
+      }
+    } catch (e) {
+      console.warn('[eTMF] advanceDocumentLifecycle error:', e.message);
     }
   };
 
@@ -459,7 +520,7 @@ export const TMFDataProvider = ({ children }) => {
   const addDocumentComment = async (docId, user, commentText) => {
     const newComment = {
       id: `comm_${Date.now()}`,
-      user: user?.name || "Clinidea User",
+      user: user?.name || "VigiThink User",
       date: new Date().toLocaleString(),
       text: commentText
     };
@@ -591,6 +652,19 @@ export const TMFDataProvider = ({ children }) => {
   const archiveStudy = async (studyId, reason, user) => {
     setStudies(prev => prev.map(s => s.id === studyId ? { ...s, status: 'Archived' } : s));
 
+    setDocuments(prev => prev.map(d => {
+      if (d.study_id === studyId) {
+        return {
+          ...d,
+          lifecycle_stage: 11,
+          lifecycle_stage_name: '11. Archival',
+          lifecycle_status: 'Archived (25-Yr Regulatory Lock)',
+          status: 'Effective'
+        };
+      }
+      return d;
+    }));
+
     try {
       await fetch(`/api/studies/${studyId}/archive`, {
         method: 'PUT',
@@ -700,10 +774,9 @@ export const TMFDataProvider = ({ children }) => {
 
   // 8. Download Actual Uploaded File or Part 11 Certified Dossier
   const downloadDocumentFile = (doc) => {
-    const fileUrl = doc.local_blob_url || doc.file_path;
-    if (fileUrl) {
+    if (doc.local_blob_url) {
       const anchor = document.createElement('a');
-      anchor.href = fileUrl;
+      anchor.href = doc.local_blob_url;
       anchor.download = doc.file_name || `${doc.document_title || doc.document_id}.pdf`;
       anchor.target = '_blank';
       document.body.appendChild(anchor);
@@ -715,7 +788,7 @@ export const TMFDataProvider = ({ children }) => {
     const downloadUrl = `/api/documents/${doc.document_id}/download`;
     const anchor = document.createElement('a');
     anchor.href = downloadUrl;
-    anchor.download = `${doc.document_id}_Part11_Certified.txt`;
+    anchor.download = doc.file_name || `${doc.document_id}_Part11_Certified.txt`;
     document.body.appendChild(anchor);
     anchor.click();
     document.body.removeChild(anchor);
@@ -757,7 +830,7 @@ export const TMFDataProvider = ({ children }) => {
       tmf_zone_id: folderData.tmf_zone_id || null,
       tmf_section_id: folderData.tmf_section_id || null,
       site_id: folderData.site_id || null,
-      created_by: user?.name || 'Clinidea User',
+      created_by: user?.name || 'VigiThink User',
       created_by_role: user?.roleId || user?.role || 'User',
       created_at: new Date().toISOString().split('T')[0]
     };
@@ -805,6 +878,18 @@ export const TMFDataProvider = ({ children }) => {
     logAuditEvent(user, "FOLDER_DELETED", "FOLDER", folderId, target?.name || folderId, target?.study_id || selectedStudyId, target?.name || "Active", "DELETED", `Custom folder deleted by ${user?.name}`);
   };
 
+  // Helper: Trigger browser CSV download
+  const triggerCsvDownload = (filename, headers, rows) => {
+    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   // 9. Export Audit Trail CSV
   const exportAuditTrailCsv = () => {
     const logsToExport = auditLogs.filter(l => l.study_id === selectedStudyId || selectedStudyId === 'ALL');
@@ -823,14 +908,7 @@ export const TMFDataProvider = ({ children }) => {
       `"${(l.reason || '').replace(/"/g, '""')}"`
     ]);
 
-    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\r\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `VigiThink_eTMF_AuditTrail_${selectedStudyId}_${new Date().toISOString().split('T')[0]}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+    triggerCsvDownload(`VigiThink_eTMF_AuditTrail_${selectedStudyId}_${new Date().toISOString().split('T')[0]}.csv`, headers, rows);
   };
 
   // 10. Export Document Manifest CSV
@@ -854,14 +932,7 @@ export const TMFDataProvider = ({ children }) => {
       `"${d.uploaded_by_name || ''}"`
     ]);
 
-    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\r\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `VigiThink_eTMF_Manifest_${studyId}_${new Date().toISOString().split('T')[0]}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+    triggerCsvDownload(`VigiThink_eTMF_Manifest_${studyId}_${new Date().toISOString().split('T')[0]}.csv`, headers, rows);
   };
 
   // 11. Raise Quality Query
@@ -1003,6 +1074,7 @@ export const TMFDataProvider = ({ children }) => {
       uploadDocument,
       updateDocumentMetadata,
       performQcReview,
+      advanceDocumentLifecycle,
       applyPart11ESignature,
       toggleDocumentLock,
       addDocumentComment,
@@ -1029,7 +1101,6 @@ export const TMFDataProvider = ({ children }) => {
       renameCustomFolder,
       deleteCustomFolder,
       clearAllTestData,
-      resetDemoData,
       fetchData: fetchAllData
     }}>
       {children}

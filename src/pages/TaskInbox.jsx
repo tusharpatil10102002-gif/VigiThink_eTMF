@@ -32,49 +32,51 @@ export default function TaskInbox() {
           My Assigned Document Workflows & Approvals
         </h2>
 
-        <table className="w-full text-left text-xs border-collapse">
-          <thead>
-            <tr className="border-b border-slate-200 bg-slate-50 text-slate-600 font-mono text-[11px] uppercase">
-              <th className="p-3">Workflow Task Name</th>
-              <th className="p-3">Target Document</th>
-              <th className="p-3">Assigned Role</th>
-              <th className="p-3">SLA Due Date</th>
-              <th className="p-3">Workflow Stage</th>
-              <th className="p-3 text-right">Action</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 font-sans">
-            {tasks.map(d => (
-              <tr key={d.document_id} className="hover:bg-slate-50 cursor-pointer" onClick={() => setSelectedDoc(d)}>
-                <td className="p-3">
-                  <p className="font-bold text-slate-900">Review & Approve Document</p>
-                  <p className="text-[10px] text-slate-500 font-mono">SOP Gate #03 — Approval Stage</p>
-                </td>
-                <td className="p-3">
-                  <div className="flex items-center gap-2">
-                    <FileText className="w-4 h-4 text-blue-600 shrink-0" />
-                    <div>
-                      <p className="font-semibold text-slate-800">{d.document_title}</p>
-                      <p className="text-[10px] text-slate-400 font-mono">{d.document_id} (v{d.version_number})</p>
-                    </div>
-                  </div>
-                </td>
-                <td className="p-3 font-mono text-blue-700 font-bold">{currentRole.name}</td>
-                <td className="p-3 font-mono text-amber-700 font-bold">2026-08-20 (In 4 Days)</td>
-                <td className="p-3">
-                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
-                    {d.status}
-                  </span>
-                </td>
-                <td className="p-3 text-right">
-                  <button className="px-3 py-1 rounded bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-1 ml-auto shadow-xs">
-                    Execute Workflow <ArrowRight className="w-3 h-3" />
-                  </button>
-                </td>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs border-collapse min-w-[700px]">
+            <thead>
+              <tr className="border-b border-slate-200 bg-slate-50 text-slate-600 font-mono text-[11px] uppercase">
+                <th className="p-3">Workflow Task Name</th>
+                <th className="p-3">Target Document</th>
+                <th className="p-3">Assigned Role</th>
+                <th className="p-3">SLA Due Date</th>
+                <th className="p-3">Workflow Stage</th>
+                <th className="p-3 text-right">Action</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-slate-100 font-sans">
+              {tasks.map(d => (
+                <tr key={d.document_id} className="hover:bg-slate-50 cursor-pointer" onClick={() => setSelectedDoc(d)}>
+                  <td className="p-3">
+                    <p className="font-bold text-slate-900">Review &amp; Approve Document</p>
+                    <p className="text-[10px] text-slate-500 font-mono">SOP Gate #03: Approval Stage</p>
+                  </td>
+                  <td className="p-3">
+                    <div className="flex items-center gap-2">
+                      <FileText className="w-4 h-4 text-blue-600 shrink-0" />
+                      <div>
+                        <p className="font-semibold text-slate-800">{d.document_title}</p>
+                        <p className="text-[10px] text-slate-400 font-mono">{d.document_id} (v{d.version_number})</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="p-3 font-mono text-blue-700 font-bold">{currentRole.name}</td>
+                  <td className="p-3 font-mono text-amber-700 font-bold">2026-08-20 (In 4 Days)</td>
+                  <td className="p-3">
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                      {d.status}
+                    </span>
+                  </td>
+                  <td className="p-3 text-right">
+                    <button className="px-3 py-1 rounded bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-1 ml-auto shadow-xs">
+                      Execute Workflow <ArrowRight className="w-3 h-3" />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {selectedDoc && (

@@ -44,10 +44,10 @@ export default function RemovedDocsView() {
 
       {/* Table */}
       <div className="glass-panel p-5 rounded-xl space-y-4">
-        <h3 className="font-bold text-slate-900 text-sm">Regulatory Removal Event History — {activeStudy.id}</h3>
+        <h3 className="font-bold text-slate-900 text-sm">Regulatory Removal Event History: {activeStudy?.id || 'None'}</h3>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
+          <table className="w-full text-left border-collapse text-xs min-w-[700px]">
             <thead>
               <tr className="bg-slate-100 text-slate-700 font-mono text-[11px] uppercase border-b border-slate-200">
                 <th className="p-3">Timestamp (UTC)</th>

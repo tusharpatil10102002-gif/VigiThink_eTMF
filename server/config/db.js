@@ -23,6 +23,16 @@ export const connectDB = async () => {
     try {
       if (!fs.existsSync(persistentDbPath)) {
         fs.mkdirSync(persistentDbPath, { recursive: true });
+      } else {
+        const lockFile = path.join(persistentDbPath, 'mongod.lock');
+        if (fs.existsSync(lockFile)) {
+          try {
+            fs.unlinkSync(lockFile);
+            console.log('[MongoDB] Cleaned up stale mongod.lock file.');
+          } catch (e) {
+            // ignore if locked
+          }
+        }
       }
       mongoMemoryServer = await MongoMemoryServer.create({
         instance: {
@@ -35,7 +45,11 @@ export const connectDB = async () => {
       await mongoose.connect(memoryUri, { dbName: 'vigithink_etmf' });
       console.log(`[MongoDB] Connected successfully to persistent embedded MongoDB at ${memoryUri} (Data Path: ${persistentDbPath})`);
     } catch (memErr) {
-      console.warn('[MongoDB] Persistent dbPath locked or unavailable, falling back to standard instance...');
+      console.warn('[MongoDB] Persistent dbPath locked or unavailable, falling back to standard instance...', memErr.message);
+      if (mongoMemoryServer) {
+        try { await mongoMemoryServer.stop(); } catch (e) {}
+        mongoMemoryServer = null;
+      }
       mongoMemoryServer = await MongoMemoryServer.create({
         instance: { launchTimeout: 60000 }
       });

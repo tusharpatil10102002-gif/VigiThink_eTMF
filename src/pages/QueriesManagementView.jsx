@@ -9,13 +9,14 @@ import {
   Search,
   Eye,
   Plus,
-  XCircle
+  XCircle,
+  X
 } from 'lucide-react';
 import DocumentViewerDrawer from '../components/document/DocumentViewerDrawer';
 
 export default function QueriesManagementView() {
   const { documents, queries, selectedStudyId, activeStudy, raiseQuery, resolveQuery } = useTMFData();
-  const { currentUser } = useAuth();
+  const { currentUser, currentRole, isDocumentInScope, canQcPass, canQcReject } = useAuth();
 
   const [filterStatus, setFilterStatus] = useState("ALL");
   const [studyScopeMode, setStudyScopeMode] = useState("ALL"); // 'ALL' | 'ACTIVE_STUDY'
@@ -50,8 +51,11 @@ export default function QueriesManagementView() {
 
   const allQueriesList = [...(queries || []), ...docFlaggedQueries];
 
+  // Apply 4D Scoping: Site users only see queries for documents within their site scope
   const scopedQueries = allQueriesList.filter(q => {
     if (studyScopeMode === 'ACTIVE_STUDY' && q.study_id !== selectedStudyId) return false;
+    const targetDoc = documents.find(d => d.document_id === q.document_id);
+    if (targetDoc && !isDocumentInScope(targetDoc)) return false;
     return true;
   });
 
@@ -69,15 +73,23 @@ export default function QueriesManagementView() {
     return true;
   });
 
-  const openCount = scopedQueries.filter(q => q.status === 'Open').length;
+  const openCount = scopedQueries.filter(q => q.status === 'Open' || q.status === 'Response Provided').length;
   const resolvedCount = scopedQueries.filter(q => q.status === 'Resolved' || q.status === 'Closed').length;
 
   const handleResolveSubmit = async (queryId, statusToSet = 'Resolved') => {
-    const finalResponse = responseText.trim() || 'Query remediated, verified against SOP-TMF-04, and cleared.';
-    await resolveQuery(queryId, finalResponse, currentUser, statusToSet);
+    const finalResponse = responseText.trim() || (canQcPass ? 'Query remediated, verified against SOP-TMF-04, and cleared.' : 'Remediation explanation provided by site staff.');
+    
+    // Non-approvers submit response as 'Response Provided', not 'Resolved'
+    const finalStatus = canQcPass ? statusToSet : 'Response Provided';
+    await resolveQuery(queryId, finalResponse, currentUser, finalStatus);
     setRespondingQueryId(null);
     setResponseText("");
-    showToast(`✓ Query ${queryId} marked as ${statusToSet} and target document approved!`);
+    
+    if (canQcPass) {
+      showToast(`Query ${queryId} marked as ${finalStatus} and target document approved!`);
+    } else {
+      showToast(`Remediation response recorded for Query ${queryId}. Awaiting QA inspection clearance.`);
+    }
   };
 
   const handleCreateQuerySubmit = async (e) => {
@@ -95,7 +107,7 @@ export default function QueriesManagementView() {
 
     setShowNewQueryModal(false);
     setNewQueryComment("");
-    showToast(`⚠️ Formal Query raised on "${targetDoc.document_title}" (${targetDoc.document_id})`);
+    showToast(`Formal Query raised on "${targetDoc.document_title}" (${targetDoc.document_id})`);
   };
 
   return (
@@ -121,7 +133,7 @@ export default function QueriesManagementView() {
             Resolved: {resolvedCount}
           </span>
 
-          {documents.length > 0 && (
+          {documents.length > 0 && canQcReject && (
             <button
               type="button"
               onClick={() => {
@@ -139,7 +151,9 @@ export default function QueriesManagementView() {
       {feedbackMsg && (
         <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 font-semibold flex items-center justify-between shadow-2xs">
           <span>{feedbackMsg}</span>
-          <button onClick={() => setFeedbackMsg(null)} className="text-slate-400 hover:text-slate-700 cursor-pointer ml-3">✕</button>
+          <button onClick={() => setFeedbackMsg(null)} className="text-slate-400 hover:text-slate-700 cursor-pointer ml-3">
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
 
@@ -178,7 +192,7 @@ export default function QueriesManagementView() {
               onClick={() => setStudyScopeMode(studyScopeMode === 'ALL' ? 'ACTIVE_STUDY' : 'ALL')}
               className="px-2.5 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-xs font-medium cursor-pointer"
             >
-              Scope: {studyScopeMode === 'ALL' ? 'All Studies' : activeStudy.id}
+              Scope: {studyScopeMode === 'ALL' ? 'All Studies' : (activeStudy?.id || 'Active Study')}
             </button>
           </div>
 
@@ -262,23 +276,43 @@ export default function QueriesManagementView() {
                       </td>
                       <td className="p-3.5 text-right">
                         <div className="flex items-center justify-end gap-1.5">
-                          {q.status === 'Open' ? (
+                          {q.status === 'Open' || q.status === 'Response Provided' ? (
                             <>
-                              <button
-                                type="button"
-                                onClick={() => setRespondingQueryId(q.query_id)}
-                                className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-semibold text-xs shadow-2xs cursor-pointer"
-                              >
-                                Respond & Resolve
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleResolveSubmit(q.query_id, 'Resolved')}
-                                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold text-xs shadow-2xs cursor-pointer flex items-center gap-1"
-                                title="1-Click Mark Resolved & Approve Document"
-                              >
-                                <CheckCircle2 className="w-3.5 h-3.5" /> Quick Resolve
-                              </button>
+                              {canQcPass ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => setRespondingQueryId(q.query_id)}
+                                    className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-semibold text-xs shadow-2xs cursor-pointer"
+                                  >
+                                    Verify / Resolve
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleResolveSubmit(q.query_id, 'Resolved')}
+                                    className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold text-xs shadow-2xs cursor-pointer flex items-center gap-1"
+                                    title="1-Click Mark Resolved & Approve Document"
+                                  >
+                                    <CheckCircle2 className="w-3.5 h-3.5" /> Quick Approve
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => setRespondingQueryId(q.query_id)}
+                                    className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold text-xs shadow-2xs cursor-pointer"
+                                    title="Submit Remediation Explanation for Quality Review"
+                                  >
+                                    {q.status === 'Response Provided' ? 'Update Response' : 'Respond to Query'}
+                                  </button>
+                                  {q.status === 'Response Provided' && (
+                                    <span className="text-amber-700 font-semibold text-[10px] bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
+                                      Pending QA Verification
+                                    </span>
+                                  )}
+                                </>
+                              )}
                             </>
                           ) : (
                             <span className="text-emerald-600 font-semibold flex items-center justify-end gap-1 text-xs">
@@ -312,23 +346,30 @@ export default function QueriesManagementView() {
           <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-md w-full p-5 space-y-4 text-xs font-sans">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="font-bold text-slate-900 text-sm">
-                Remediate & Resolve Query ({respondingQueryId})
+                {canQcPass ? 'Remediate & Resolve Query' : 'Submit Query Remediation Response'} ({respondingQueryId})
               </h3>
               <button onClick={() => setRespondingQueryId(null)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
-                ✕
+                <X className="w-4 h-4" />
               </button>
             </div>
             
             <div className="space-y-1.5">
-              <label className="block font-semibold text-slate-700">Resolution Actions & Verification Details:</label>
+              <label className="block font-semibold text-slate-700">
+                {canQcPass ? 'Resolution Actions & Verification Details:' : 'Site Remediation Explanation / Re-upload Details:'}
+              </label>
               <textarea
                 rows={4}
-                placeholder="Explain document correction, re-scan verification, or metadata update applied..."
+                placeholder={canQcPass ? "Explain document correction, re-scan verification, or metadata update applied..." : "Explain corrective action taken (e.g. re-uploaded signed document, updated metadata)..."}
                 value={responseText}
                 onChange={(e) => setResponseText(e.target.value)}
                 className="w-full bg-slate-50 focus:bg-white border border-slate-300 focus:border-emerald-500 rounded-lg p-2.5 text-xs focus:outline-none"
                 autoFocus
               />
+              {!canQcPass && (
+                <p className="text-[10px] text-slate-500">
+                  Submitting this response notifies QA / TMF Lead to verify your correction and grant official QC clearance.
+                </p>
+              )}
             </div>
 
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
@@ -342,9 +383,11 @@ export default function QueriesManagementView() {
               <button
                 type="button"
                 onClick={() => handleResolveSubmit(respondingQueryId, 'Resolved')}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold shadow-2xs cursor-pointer flex items-center gap-1.5"
+                className={`px-4 py-2 text-white rounded-lg font-semibold shadow-2xs cursor-pointer flex items-center gap-1.5 ${
+                  canQcPass ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-blue-600 hover:bg-blue-700'
+                }`}
               >
-                <Send className="w-3.5 h-3.5" /> Submit Resolution & Approve
+                <Send className="w-3.5 h-3.5" /> {canQcPass ? 'Submit Resolution & Approve' : 'Submit Response to QA'}
               </button>
             </div>
           </div>
@@ -361,7 +404,7 @@ export default function QueriesManagementView() {
                 Raise New Quality Query
               </h3>
               <button type="button" onClick={() => setShowNewQueryModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
-                ✕
+                <X className="w-4 h-4" />
               </button>
             </div>
 
@@ -374,7 +417,7 @@ export default function QueriesManagementView() {
               >
                 {documents.map(d => (
                   <option key={d.document_id} value={d.document_id}>
-                    {d.document_id} — {d.document_title}
+                    {d.document_id}: {d.document_title}
                   </option>
                 ))}
               </select>

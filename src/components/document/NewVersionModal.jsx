@@ -41,7 +41,7 @@ export default function NewVersionModal({ doc, onClose, onVersionCreated }) {
       <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-md w-full overflow-hidden text-xs font-sans">
         
         {/* Header */}
-        <div className="bg-clinevo-header text-white px-4 py-3 flex items-center justify-between">
+        <div className="bg-[#0B2240] text-white px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <GitCompare className="w-4 h-4 text-sky-400" />
             <h3 className="font-bold text-sm">Author New Document Version</h3>
@@ -111,7 +111,7 @@ export default function NewVersionModal({ doc, onClose, onVersionCreated }) {
             <button
               type="submit"
               disabled={submitting}
-              className="px-4 py-1.5 bg-clinevo-blue hover:bg-blue-700 text-white rounded font-bold shadow-xs cursor-pointer flex items-center gap-1"
+              className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded font-bold shadow-xs cursor-pointer flex items-center gap-1"
             >
               {submitting ? 'Submitting...' : `Publish v${nextVer}`}
             </button>

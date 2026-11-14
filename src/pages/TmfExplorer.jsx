@@ -22,19 +22,19 @@ import {
   CheckCircle2,
   Trash2,
   Users,
-  Building2
+  Building2,
+  Building,
+  Edit,
+  Edit3
 } from 'lucide-react';
 import DocumentViewerDrawer from '../components/document/DocumentViewerDrawer';
 import FilePlanModal from '../components/document/FilePlanModal';
-import MilestonesModal from '../components/document/MilestonesModal';
 import CheckOutModal from '../components/document/CheckOutModal';
 import UploadWizardModal from '../components/document/UploadWizardModal';
 import AddPlaceholderModal from '../components/document/AddPlaceholderModal';
-import AddCountryModal from '../components/document/AddCountryModal';
 import CopyDocumentModal from '../components/document/CopyDocumentModal';
 import MoveDocumentModal from '../components/document/MoveDocumentModal';
 import MasterIndexModal from '../components/document/MasterIndexModal';
-import InventoryModal from '../components/document/InventoryModal';
 
 export default function TmfExplorer() {
   const { 
@@ -109,13 +109,10 @@ export default function TmfExplorer() {
   // Modals state
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showPlaceholderModal, setShowPlaceholderModal] = useState(false);
-  const [showAddCountryModal, setShowAddCountryModal] = useState(false);
   const [showCopyModal, setShowCopyModal] = useState(false);
   const [showMoveModal, setShowMoveModal] = useState(false);
   const [showMasterIndexModal, setShowMasterIndexModal] = useState(false);
-  const [showMilestonesModal, setShowMilestonesModal] = useState(false);
   const [showFilePlanModal, setShowFilePlanModal] = useState(false);
-  const [showInventoryModal, setShowInventoryModal] = useState(false);
   const [showCheckOutModal, setShowCheckOutModal] = useState(false);
 
   const handleCreateNewFolderSubmit = (e) => {
@@ -161,6 +158,7 @@ export default function TmfExplorer() {
     if (activeSectionId && d.tmf_section_id !== activeSectionId) return false;
     if (activeSiteId && d.site_id && d.site_id !== activeSiteId) return false;
     if (activeCustomFolder && d.custom_folder_name !== activeCustomFolder && !(d.folder_path || '').includes(activeCustomFolder)) return false;
+    if (!isDocumentInScope(d)) return false;
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       return (
@@ -201,7 +199,7 @@ export default function TmfExplorer() {
             className={`cursor-pointer hover:underline ${!activeZoneId && !activeSiteId && !activeViewMode ? 'font-bold text-blue-900' : ''}`}
           >
             {activeViewMode === 'students'
-              ? 'Clinidea Education Students Demo (6 Training Sites)'
+              ? 'Investigational Trial Sites & Personnel Folders'
               : activeStudyFolder
               ? `Study : ${activeStudyFolder} (${activeStudyObj?.shortName || ''})`
               : 'CM Folder (All Studies)'}
@@ -211,9 +209,9 @@ export default function TmfExplorer() {
               <ChevronRight className="w-3 h-3 text-slate-400" />
               <span 
                 onClick={() => updateExplorerRoute({ study: activeStudyFolder, site: activeSiteId })}
-                className={`cursor-pointer hover:underline ${!activeZoneId ? 'font-bold text-blue-900' : ''}`}
+                className={`cursor-pointer hover:underline inline-flex items-center gap-1 ${!activeZoneId ? 'font-bold text-blue-900' : ''}`}
               >
-                🏥 {activeSiteId}
+                <Building className="w-3 h-3 text-slate-500" /> {activeSiteId}
               </span>
             </>
           )}
@@ -253,7 +251,7 @@ export default function TmfExplorer() {
         )}
       </div>
 
-      {/* Action & Filter Bar matching Clinevo UI */}
+      {/* Action & Filter Bar */}
       <div className="bg-white border border-slate-200 rounded p-2.5 flex flex-wrap items-center justify-between gap-3 shadow-xs">
         
         <div className="flex items-center gap-3">
@@ -299,93 +297,74 @@ export default function TmfExplorer() {
                 Role Actions ({currentUser?.roleId || currentUser?.role})
               </div>
 
-              {hasPermission('admin') && (
-                <button 
-                  onClick={() => { setShowMenuDropdown(false); setShowAddCountryModal(true); }} 
-                  className="w-full text-left px-2.5 py-1.5 hover:bg-sky-50 rounded flex items-center gap-2 cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5 text-blue-600" /> Add Country (Admin)
-                </button>
+              {studies.length === 0 ? (
+                <div className="p-3 text-center space-y-2">
+                  <div className="w-8 h-8 rounded-full bg-amber-50 text-amber-600 border border-amber-200 flex items-center justify-center mx-auto">
+                    <AlertCircle className="w-4 h-4" />
+                  </div>
+                  <p className="text-xs text-amber-900 font-bold">Study Protocol Required</p>
+                  <p className="text-[11px] text-slate-500 leading-tight">
+                    An active clinical study protocol must be initiated before performing repository actions.
+                  </p>
+                  {(currentUser?.roleId === 'system_admin' || currentUser?.roleId === 'tmf_manager' || currentUser?.roleId === 'ctm') && (
+                    <button
+                      onClick={() => { setShowMenuDropdown(false); navigate('/studies'); }}
+                      className="w-full py-1.5 bg-blue-700 hover:bg-blue-800 text-white rounded text-xs font-bold transition-colors cursor-pointer"
+                    >
+                      Go to Study Management →
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <>
+                  {(hasPermission('upload') || hasPermission('editMetadata')) && hasPermission('manageFolders') && (
+                    <button 
+                      onClick={() => { setShowMenuDropdown(false); setShowPlaceholderModal(true); }} 
+                      className="w-full text-left px-2.5 py-1.5 hover:bg-sky-50 rounded flex items-center gap-2 cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5 text-amber-600" /> Add Placeholder
+                    </button>
+                  )}
+
+                  {hasPermission('moveFile') && (
+                    <button 
+                      onClick={() => { setShowMenuDropdown(false); setShowCopyModal(true); }} 
+                      className="w-full text-left px-2.5 py-1.5 hover:bg-sky-50 rounded flex items-center gap-2 cursor-pointer"
+                    >
+                      <Copy className="w-3.5 h-3.5 text-indigo-600" /> Copy Documents
+                    </button>
+                  )}
+
+                  {hasPermission('moveFile') && (
+                    <button 
+                      onClick={() => { setShowMenuDropdown(false); setShowMoveModal(true); }} 
+                      className="w-full text-left px-2.5 py-1.5 hover:bg-sky-50 rounded flex items-center gap-2 cursor-pointer"
+                    >
+                      <MoveRight className="w-3.5 h-3.5 text-slate-600" /> Move Documents
+                    </button>
+                  )}
+
+                  <button 
+                    onClick={() => { setShowMenuDropdown(false); setShowFilePlanModal(true); }} 
+                    className="w-full text-left px-2.5 py-1.5 hover:bg-sky-50 rounded flex items-center gap-2 cursor-pointer"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-blue-600" /> File Plan
+                  </button>
+
+                  <button 
+                    onClick={() => { setShowMenuDropdown(false); setShowMasterIndexModal(true); }} 
+                    className="w-full text-left px-2.5 py-1.5 hover:bg-sky-50 rounded flex items-center gap-2 cursor-pointer"
+                  >
+                    <ListOrdered className="w-3.5 h-3.5 text-amber-600" /> Master Index
+                  </button>
+                </>
               )}
-
-              {hasPermission('upload') && (
-                <button 
-                  onClick={() => { setShowMenuDropdown(false); setShowUploadModal(true); }} 
-                  className="w-full text-left px-2.5 py-1.5 hover:bg-sky-50 rounded flex items-center gap-2 cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5 text-blue-600" /> Add Document
-                </button>
-              )}
-
-              {(hasPermission('upload') || hasPermission('editMetadata')) && (
-                <button 
-                  onClick={() => { setShowMenuDropdown(false); setShowPlaceholderModal(true); }} 
-                  className="w-full text-left px-2.5 py-1.5 hover:bg-sky-50 rounded flex items-center gap-2 cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5 text-amber-600" /> Add Placeholder
-                </button>
-              )}
-
-              {hasPermission('download') && (
-                <button 
-                  onClick={() => { setShowMenuDropdown(false); exportDocumentManifestCsv(activeStudyIdToUse); }} 
-                  className="w-full text-left px-2.5 py-1.5 hover:bg-sky-50 rounded flex items-center gap-2 cursor-pointer"
-                >
-                  <Download className="w-3.5 h-3.5 text-emerald-600" /> Bulk Download (CSV Manifest)
-                </button>
-              )}
-
-              {hasPermission('moveFile') && (
-                <button 
-                  onClick={() => { setShowMenuDropdown(false); setShowCopyModal(true); }} 
-                  className="w-full text-left px-2.5 py-1.5 hover:bg-sky-50 rounded flex items-center gap-2 cursor-pointer"
-                >
-                  <Copy className="w-3.5 h-3.5 text-indigo-600" /> Copy Documents
-                </button>
-              )}
-
-              <button 
-                onClick={() => { setShowMenuDropdown(false); setShowFilePlanModal(true); }} 
-                className="w-full text-left px-2.5 py-1.5 hover:bg-sky-50 rounded flex items-center gap-2 cursor-pointer"
-              >
-                <FileSpreadsheet className="w-3.5 h-3.5 text-blue-600" /> File Plan
-              </button>
-
-              <button 
-                onClick={() => { setShowMenuDropdown(false); setShowMasterIndexModal(true); }} 
-                className="w-full text-left px-2.5 py-1.5 hover:bg-sky-50 rounded flex items-center gap-2 cursor-pointer"
-              >
-                <ListOrdered className="w-3.5 h-3.5 text-amber-600" /> Master Index
-              </button>
-
-              <button 
-                onClick={() => { setShowMenuDropdown(false); setShowMilestonesModal(true); }} 
-                className="w-full text-left px-2.5 py-1.5 hover:bg-sky-50 rounded flex items-center gap-2 cursor-pointer"
-              >
-                <Calendar className="w-3.5 h-3.5 text-purple-600" /> Milestones Due Date
-              </button>
-
-              {hasPermission('moveFile') && (
-                <button 
-                  onClick={() => { setShowMenuDropdown(false); setShowMoveModal(true); }} 
-                  className="w-full text-left px-2.5 py-1.5 hover:bg-sky-50 rounded flex items-center gap-2 cursor-pointer"
-                >
-                  <MoveRight className="w-3.5 h-3.5 text-rose-600" /> Move Documents
-                </button>
-              )}
-
-              <button 
-                onClick={() => { setShowMenuDropdown(false); setShowInventoryModal(true); }} 
-                className="w-full text-left px-2.5 py-1.5 hover:bg-sky-50 rounded flex items-center gap-2 cursor-pointer"
-              >
-                <Eye className="w-3.5 h-3.5 text-teal-600" /> View Inventory
-              </button>
             </div>
           )}
         </div>
       </div>
 
-      {/* SPECIAL VIEW: Clinidea Education Students Demo (6 Clinical Sites & Student Folders) */}
+      {/* SPECIAL VIEW: Investigational Sites & Personnel Folders */}
       {activeViewMode === 'students' ? (
         <div className="space-y-3">
           <div className="bg-white border border-indigo-200 rounded p-4 flex flex-wrap items-center justify-between gap-3 shadow-xs">
@@ -395,42 +374,46 @@ export default function TmfExplorer() {
               </div>
               <div>
                 <h2 className="font-bold text-slate-900 text-sm">
-                  Clinidea Education Students Demo — 6 Clinical Sites & Assigned Roles
+                  Investigational Trial Sites &amp; Assigned Personnel Directory
                 </h2>
                 <p className="text-[11px] text-slate-500">
-                  Study: <span className="font-semibold text-slate-700">CLIN-001 (Protocol CE-QVJ499-2026-001)</span> | Click any Student's Site Folder to open their eTMF Zone & Site Files
+                  Study: <span className="font-semibold text-slate-700">{activeStudyObj?.id || 'Active Protocol'} ({activeStudyObj?.protocolNumber || activeStudyObj?.shortName || 'Clinical Study'})</span> | Select any Investigational Site to view site-specific DIA TMF records
                 </p>
               </div>
             </div>
 
             <div className="flex items-center gap-2">
-              <button
-                onClick={() => navigate('/roles-access')}
-                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-xs font-bold cursor-pointer flex items-center gap-1.5 shadow-xs"
-              >
-                <ShieldCheck className="w-3.5 h-3.5" /> {hasPermission('admin') ? 'Manage Student Roles & 6-Rotations (Admin)' : 'View Role & 6-Rotation Matrix (Read-Only)'}
-              </button>
-              <button
-                onClick={() => updateExplorerRoute({ study: 'CLIN-001' })}
-                className="px-3 py-1.5 bg-clinevo-blue hover:bg-blue-700 text-white rounded text-xs font-bold cursor-pointer flex items-center gap-1.5 shadow-xs"
-              >
-                <Folder className="w-3.5 h-3.5" /> Open Full Study CLIN-001
-              </button>
+              {hasPermission('manageUsers') && (
+                <button
+                  onClick={() => navigate('/roles-access')}
+                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-xs font-bold cursor-pointer flex items-center gap-1.5 shadow-xs"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5" /> Manage User Access &amp; Roles (Admin)
+                </button>
+              )}
+              {activeStudyObj && (
+                <button
+                  onClick={() => updateExplorerRoute({ study: activeStudyObj.id })}
+                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold cursor-pointer flex items-center gap-1.5 shadow-xs"
+                >
+                  <Folder className="w-3.5 h-3.5" /> Open Full Study {activeStudyObj.id}
+                </button>
+              )}
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {(studies.find(s => s.id === 'CLIN-001')?.sites || []).map((site) => {
-              const studentUser = (allUsers || []).find(
-                u => u.scopeSite === site.id || (site.assignedStudent && u.name.toLowerCase().includes(site.assignedStudent.split(' ')[0].toLowerCase()))
+            {(activeStudyObj?.sites || []).map((site) => {
+              const siteTargetId = site.number || site.id;
+              const assignedUser = (allUsers || []).find(
+                u => u.siteScope === siteTargetId || (site.assignedPiName && u.name.toLowerCase().includes(site.assignedPiName.split(' ')[0].toLowerCase()))
               );
-              const studentRole = (allRoles || []).find(r => r.id === (studentUser?.role || studentUser?.roleId));
-              const siteDocsCount = documents.filter(d => d.study_id === 'CLIN-001' && (!d.site_id || d.site_id === site.id)).length;
+              const siteDocsCount = documents.filter(d => d.study_id === activeStudyObj.id && (!d.site_id || d.site_id.includes(siteTargetId))).length;
 
               return (
                 <div
-                  key={site.id}
-                  onClick={() => updateExplorerRoute({ study: 'CLIN-001', site: site.id })}
+                  key={site.id || site.number}
+                  onClick={() => updateExplorerRoute({ study: activeStudyObj.id, site: siteTargetId })}
                   className="bg-white border border-slate-200 hover:border-indigo-400 rounded-lg p-4 cursor-pointer transition-all shadow-xs hover:shadow-md flex flex-col justify-between gap-3"
                 >
                   <div className="space-y-2">
@@ -439,28 +422,28 @@ export default function TmfExplorer() {
                         <Folder className="w-8 h-8 text-amber-500 fill-amber-100 shrink-0" />
                         <div>
                           <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 rounded font-mono font-bold text-[10px] border border-indigo-200">
-                            {site.id}
+                            {siteTargetId}
                           </span>
                           <h3 className="font-bold text-slate-900 text-xs mt-1">
-                            {site.assignedStudent || studentUser?.name || 'Assigned Trainee'}
+                            {site.piName || site.assignedPiName || 'Principal Investigator'}
                           </h3>
                         </div>
                       </div>
                       <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-bold rounded border border-emerald-200">
-                        {studentRole?.shortName || studentUser?.role || 'Trainee'}
+                        {site.status || 'Active Site'}
                       </span>
                     </div>
 
                     <div className="bg-slate-50 p-2.5 rounded border border-slate-200 text-[11px] space-y-1">
                       <p className="font-semibold text-slate-800 truncate" title={site.name}>
-                        🏥 {site.name}
+                        <Building className="w-3.5 h-3.5 text-slate-500 inline mr-1" /> {site.name}
                       </p>
                       <p className="text-slate-600 text-[10px]">
-                        <span className="font-semibold">PI:</span> {site.piName} ({site.piLicense || 'MCI Reg'})
+                        <span className="font-semibold">Facility PI:</span> {site.piName} ({site.piLicense || 'Medical License'})
                       </p>
-                      {studentUser && (
-                        <p className="text-slate-500 font-mono text-[10px]">
-                          Login: {studentUser.email}
+                      {(site.assignedCrcName || site.assignedCraName) && (
+                        <p className="text-slate-500 text-[10px]">
+                          CRC: <strong className="text-slate-700">{site.assignedCrcName || 'Site Staff'}</strong> | CRA: <strong className="text-slate-700">{site.assignedCraName || 'Monitor'}</strong>
                         </p>
                       )}
                     </div>
@@ -468,10 +451,10 @@ export default function TmfExplorer() {
 
                   <div className="flex items-center justify-between pt-2 border-t border-slate-100">
                     <span className="text-[10px] font-mono text-slate-500">
-                      Accessible Docs: <strong className="text-slate-800">{siteDocsCount}</strong> | Target N={site.targetEnrollment || 34}
+                      Accessible Docs: <strong className="text-slate-800">{siteDocsCount}</strong> | Target N={site.targetEnrollment || 30}
                     </span>
                     <span className="px-2.5 py-1 bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white rounded font-bold text-[10px] border border-blue-200 transition-colors">
-                      Open {site.id} TMF →
+                      Open {siteTargetId} TMF →
                     </span>
                   </div>
                 </div>
@@ -482,7 +465,22 @@ export default function TmfExplorer() {
       ) : !activeStudyFolder ? (
         /* LEVEL 1: Study Cards List (CM Folder All Studies) */
         <div className="space-y-3">
-          {studies.map((study) => {
+          {studies.length === 0 ? (
+            <div className="bg-white border-2 border-dashed border-slate-300 rounded-xl p-12 text-center space-y-4 shadow-xs">
+              <Folder className="w-12 h-12 text-slate-300 mx-auto" />
+              <h3 className="text-base font-bold text-slate-800">No Clinical Studies Active in VigiThink eTMF</h3>
+              <p className="text-slate-500 text-xs max-w-lg mx-auto leading-relaxed">
+                The repository is running in clean-slate production mode. As System Administrator, create your study in Study Management to establish the DIA TMF Reference Model v3.1 structure and site repositories.
+              </p>
+              <button
+                onClick={() => navigate('/studies')}
+                className="px-5 py-2.5 bg-blue-700 hover:bg-blue-800 text-white rounded font-bold text-xs shadow-md transition-all inline-flex items-center gap-2 cursor-pointer"
+              >
+                Go to Study Management →
+              </button>
+            </div>
+          ) : (
+            studies.map((study) => {
             const metrics = getStudyMetrics(study.id);
             return (
               <div
@@ -552,8 +550,9 @@ export default function TmfExplorer() {
                 </div>
               </div>
             );
-          })}
-        </div>
+          })
+        )}
+      </div>
       ) : (
         /* LEVEL 2 & 3 & 4: Subfolders and Document Views */
         <div className="space-y-3">
@@ -563,29 +562,29 @@ export default function TmfExplorer() {
             <div>
               <h2 className="font-bold text-slate-900 text-sm">
                 {activeCustomFolder
-                  ? `📁 Custom Folder: ${activeCustomFolder}`
+                  ? `Folder: ${activeCustomFolder}`
                   : !activeZoneId 
-                  ? `${activeStudyFolder}: ${activeStudyObj?.shortName || ''} ${activeSiteId ? `— 🏥 ${activeSiteId}` : ''}` 
+                  ? `${activeStudyFolder}: ${activeStudyObj?.shortName || ''} ${activeSiteId ? `(${activeSiteId})` : ''}` 
                   : `Zone ${activeZoneId}: ${activeZoneObj?.name} ${activeSiteId ? `(${activeSiteId})` : ''}`}
               </h2>
               <p className="text-[11px] text-slate-500 font-mono">
                 {!activeZoneId 
-                  ? `Protocol: ${activeStudyObj?.protocolNumber || activeStudyFolder} | DIA TMF Reference Model v3.1 Subfolder Hierarchy` 
+                  ? `Protocol: ${activeStudyObj?.protocolNumber || activeStudyFolder} | DIA TMF Reference Model v3.1 Taxonomy` 
                   : `Filed Documents & Essential Records for Zone ${activeZoneId}`}
               </p>
             </div>
 
             {!hasPermission('upload') && (
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="px-2.5 py-1 bg-slate-100 text-slate-500 rounded text-[11px] font-semibold border border-slate-200">
-                  🔒 Read / Review Only (No Upload Permission)
+                <span className="px-2.5 py-1 bg-slate-100 text-slate-600 rounded text-[11px] font-semibold border border-slate-300 inline-flex items-center gap-1">
+                  <Lock className="w-3 h-3 text-slate-500" /> Read Only View
                 </span>
               </div>
             )}
           </div>
 
           {/* Inline Create New Folder Form */}
-          {showNewFolderInput && hasPermission('upload') && (
+          {showNewFolderInput && hasPermission('manageFolders') && (
             <form onSubmit={handleCreateNewFolderSubmit} className="bg-amber-50 border border-amber-300 rounded p-3 flex flex-wrap items-center gap-2 shadow-xs">
               <Folder className="w-4 h-4 text-amber-600 fill-amber-100" />
               <span className="font-bold text-amber-900 text-xs">New Folder Name:</span>
@@ -623,7 +622,7 @@ export default function TmfExplorer() {
                 onClick={() => updateExplorerRoute({ study: activeStudyFolder, zone: activeZoneId, section: activeSectionId, site: null })}
                 className={`px-2.5 py-1 rounded text-[11px] font-semibold whitespace-nowrap border cursor-pointer ${
                   !activeSiteId
-                    ? 'bg-clinevo-blue text-white border-blue-800'
+                    ? 'bg-blue-600 text-white border-blue-800'
                     : 'bg-slate-50 text-slate-700 border-slate-300 hover:bg-slate-100'
                 }`}
               >
@@ -639,7 +638,7 @@ export default function TmfExplorer() {
                       : 'bg-white text-slate-700 border-slate-300 hover:bg-sky-50'
                   }`}
                 >
-                  🏥 {site.id} {site.assignedStudent ? `(${site.assignedStudent.split(' ')[0]})` : ''}
+                  Site {site.id} {site.assignedStudent ? `(${site.assignedStudent.split(' ')[0]})` : ''}
                 </button>
               ))}
             </div>
@@ -692,7 +691,7 @@ export default function TmfExplorer() {
                         </div>
                       </div>
 
-                      {hasPermission('upload') && (
+                      {hasPermission('manageFolders') && (
                         <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
                           <button
                             type="button"
@@ -703,10 +702,10 @@ export default function TmfExplorer() {
                                 if (activeCustomFolder === folder.name) setActiveCustomFolder(updatedName.trim());
                               }
                             }}
-                            className="p-1 bg-white hover:bg-amber-100 text-amber-800 rounded border border-amber-200 text-[10px] font-bold cursor-pointer"
+                            className="p-1.5 bg-white hover:bg-slate-100 text-slate-700 rounded border border-slate-300 cursor-pointer"
                             title="Rename Folder"
                           >
-                            ✏️
+                            <Edit className="w-3 h-3 text-slate-600" />
                           </button>
                           <button
                             type="button"
@@ -716,10 +715,10 @@ export default function TmfExplorer() {
                                 if (activeCustomFolder === folder.name) setActiveCustomFolder(null);
                               }
                             }}
-                            className="p-1 bg-white hover:bg-rose-600 text-rose-600 hover:text-white rounded border border-rose-200 text-[10px] font-bold cursor-pointer"
+                            className="p-1.5 bg-white hover:bg-rose-50 text-rose-700 rounded border border-rose-300 cursor-pointer"
                             title="Delete Folder"
                           >
-                            🗑️
+                            <Trash2 className="w-3 h-3 text-rose-600" />
                           </button>
                         </div>
                       )}
@@ -768,7 +767,7 @@ export default function TmfExplorer() {
               <button
                 onClick={() => updateExplorerRoute({ study: activeStudyFolder, site: activeSiteId, zone: activeZoneId, section: null })}
                 className={`px-3 py-1 rounded text-xs font-semibold whitespace-nowrap border cursor-pointer ${
-                  !activeSectionId ? 'bg-clinevo-blue text-white border-blue-800' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                  !activeSectionId ? 'bg-blue-600 text-white border-blue-800' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
                 }`}
               >
                 All Sections in Zone {activeZoneId}
@@ -778,7 +777,7 @@ export default function TmfExplorer() {
                   key={sec.id}
                   onClick={() => updateExplorerRoute({ study: activeStudyFolder, site: activeSiteId, zone: activeZoneId, section: sec.id })}
                   className={`px-3 py-1 rounded text-xs font-semibold whitespace-nowrap border cursor-pointer ${
-                    activeSectionId === sec.id ? 'bg-clinevo-blue text-white border-blue-800' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                    activeSectionId === sec.id ? 'bg-blue-600 text-white border-blue-800' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
                   }`}
                 >
                   {sec.id} {sec.name}
@@ -818,7 +817,7 @@ export default function TmfExplorer() {
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
-                  <tr className="bg-clinevo-table-header text-white font-bold text-[11px]">
+                  <tr className="bg-[#132E52] text-white font-bold text-[11px]">
                     <th className="p-2.5 border-b border-blue-800">Document ID & File Name</th>
                     <th className="p-2.5 border-b border-blue-800 text-center">Version</th>
                     <th className="p-2.5 border-b border-blue-800">Document Status</th>
@@ -837,7 +836,8 @@ export default function TmfExplorer() {
                   ) : (
                     currentStudyDocs.map(doc => {
                       const hasUploadedFileUrl = Boolean(doc.local_blob_url || doc.file_path);
-                      const canEditOrDeleteThisFile = hasPermission('upload') || hasPermission('editMetadata') || hasPermission('delete');
+                      const canDeleteThisFile = hasPermission('delete');
+                      const canRenameThisFile = hasPermission('editMetadata');
 
                       return (
                         <tr key={doc.document_id} className="hover:bg-sky-50/60 transition-colors">
@@ -858,18 +858,23 @@ export default function TmfExplorer() {
                             v{doc.version_number || '1.0'}
                           </td>
                           <td className="p-2.5">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-                              doc.status === 'Effective' || doc.status === 'Approved' ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
-                              doc.status === 'Placeholder' ? 'bg-rose-100 text-rose-800 border-rose-300' :
-                              doc.status === 'Draft' ? 'bg-sky-100 text-sky-800 border-sky-300' :
-                              'bg-amber-100 text-amber-800 border-amber-300'
-                            }`}>
-                              {doc.status}
-                            </span>
+                            <div className="flex flex-col items-start gap-1">
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                                doc.status === 'Effective' || doc.status === 'Approved' ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
+                                doc.status === 'Placeholder' ? 'bg-rose-100 text-rose-800 border-rose-300' :
+                                doc.status === 'Draft' ? 'bg-sky-100 text-sky-800 border-sky-300' :
+                                'bg-amber-100 text-amber-800 border-amber-300'
+                              }`}>
+                                {doc.status}
+                              </span>
+                              <span className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                Stage {doc.lifecycle_stage || 5}/11: {doc.lifecycle_stage_name ? doc.lifecycle_stage_name.replace(/^\d+\.\s*/, '') : 'Metadata Entry'}
+                              </span>
+                            </div>
                           </td>
                           <td className="p-2.5 text-slate-700 font-sans text-[11px]">
                             <span className="font-semibold block">{doc.site_id || 'Study Level'}</span>
-                            <span className="text-[10px] text-slate-500">By: {doc.uploaded_by_name || 'Clinidea User'}</span>
+                            <span className="text-[10px] text-slate-500">By: {doc.uploaded_by_name || 'VigiThink User'}</span>
                           </td>
                           <td className="p-2.5 text-[11px] text-slate-500 font-sans truncate max-w-sm">
                             {doc.folder_path}
@@ -885,18 +890,16 @@ export default function TmfExplorer() {
                                 <Eye className="w-3 h-3" /> View File
                               </button>
 
-                              {/* 2. Direct Open in Browser Tab if Uploaded File URL exists */}
-                              {hasUploadedFileUrl && (
-                                <a
-                                  href={doc.local_blob_url || doc.file_path}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded border border-emerald-200 text-[10px] font-bold flex items-center gap-1"
-                                  title="Open Original Uploaded File in New Tab"
-                                >
-                                  ↗ Open
-                                </a>
-                              )}
+                              {/* 2. Direct Open in Browser Tab */}
+                              <a
+                                href={doc.local_blob_url || doc.file_path || `/api/documents/${doc.document_id}/download`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded border border-emerald-200 text-[10px] font-bold flex items-center gap-1 cursor-pointer"
+                                title="Open Document Record in New Tab"
+                              >
+                                ↗ Open
+                              </a>
 
                               {/* 3. Download File */}
                               <button
@@ -907,19 +910,19 @@ export default function TmfExplorer() {
                                 <Download className="w-3.5 h-3.5" />
                               </button>
 
-                              {/* 4. Rename Document / File (For anyone with Upload / Edit permission) */}
-                              {canEditOrDeleteThisFile && (
+                              {/* 4. Rename Document / File (Metadata Edit permission) */}
+                              {canRenameThisFile && (
                                 <button
                                   onClick={() => handleQuickRenameDoc(doc)}
-                                  className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded border border-amber-200 text-[10px] font-bold cursor-pointer"
+                                  className="px-2 py-1 bg-white hover:bg-slate-100 text-slate-700 rounded border border-slate-300 text-[10px] font-semibold cursor-pointer inline-flex items-center gap-1"
                                   title="Rename Document / File"
                                 >
-                                  ✏️ Rename
+                                  <Edit3 className="w-3 h-3 text-slate-600" /> Rename
                                 </button>
                               )}
 
-                              {/* 5. Delete Document / File (For anyone with Upload / Delete permission) */}
-                              {canEditOrDeleteThisFile && (
+                              {/* 5. Delete Document / File (Admin permission only) */}
+                              {canDeleteThisFile && (
                                 <button
                                   onClick={() => {
                                     if (window.confirm(`Are you sure you want to delete file "${doc.document_title}" (${doc.document_id})?`)) {
@@ -927,7 +930,7 @@ export default function TmfExplorer() {
                                     }
                                   }}
                                   className="px-2 py-1 bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white rounded border border-rose-200 text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
-                                  title="Delete Uploaded File"
+                                  title="Delete Uploaded File (Admin Only)"
                                 >
                                   <Trash2 className="w-3 h-3" /> Delete
                                 </button>
@@ -960,13 +963,10 @@ export default function TmfExplorer() {
         />
       )}
       {showPlaceholderModal && <AddPlaceholderModal defaultZone={activeZoneId || "01"} onClose={() => setShowPlaceholderModal(false)} />}
-      {showAddCountryModal && <AddCountryModal onClose={() => setShowAddCountryModal(false)} />}
       {showCopyModal && <CopyDocumentModal onClose={() => setShowCopyModal(false)} />}
       {showMoveModal && <MoveDocumentModal onClose={() => setShowMoveModal(false)} />}
       {showMasterIndexModal && <MasterIndexModal onClose={() => setShowMasterIndexModal(false)} />}
-      {showMilestonesModal && <MilestonesModal onClose={() => setShowMilestonesModal(false)} />}
       {showFilePlanModal && <FilePlanModal onClose={() => setShowFilePlanModal(false)} />}
-      {showInventoryModal && <InventoryModal onClose={() => setShowInventoryModal(false)} />}
       {showCheckOutModal && <CheckOutModal onClose={() => setShowCheckOutModal(false)} />}
 
       {/* Document Viewer Drawer */}

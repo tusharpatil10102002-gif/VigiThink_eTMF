@@ -61,12 +61,12 @@ export default function TimelinessSlaView() {
             Timeliness, Filing Turnaround & SLA Adherence Monitor
           </h1>
           <p className="text-xs text-slate-500 font-mono">
-            Module 8 & Section 25: Tracking contemporaneous document filing from clinical event date to eTMF archive
+            Tracking contemporaneous document filing from clinical event date to eTMF archive
           </p>
         </div>
 
         <span className="px-3 py-1 bg-indigo-50 text-indigo-800 rounded border border-indigo-300 font-mono font-bold">
-          Trial: {activeStudy.id}
+          Trial: {activeStudy?.id || 'None'}
         </span>
       </div>
 

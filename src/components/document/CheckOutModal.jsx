@@ -16,7 +16,7 @@ export default function CheckOutModal({ docTitle = "Protocol_DEC 2023 BATCH_1_pd
       <div className="bg-white rounded-lg shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden text-xs font-sans">
         
         {/* Header matching Screenshot Page 19 top */}
-        <div className="bg-clinevo-blue text-white px-4 py-2.5 flex items-center justify-between font-bold">
+        <div className="bg-blue-600 text-white px-4 py-2.5 flex items-center justify-between font-bold">
           <span className="text-sm flex items-center gap-1.5">
             <Lock className="w-4 h-4" /> Check Out
           </span>
@@ -54,7 +54,7 @@ export default function CheckOutModal({ docTitle = "Protocol_DEC 2023 BATCH_1_pd
           <div className="flex justify-center gap-3 pt-3 border-t border-slate-200">
             <button
               type="submit"
-              className="bg-clinevo-blue hover:bg-blue-700 text-white font-bold px-5 py-1.5 rounded shadow-xs cursor-pointer"
+              className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-5 py-1.5 rounded shadow-xs cursor-pointer"
             >
               Check Out
             </button>

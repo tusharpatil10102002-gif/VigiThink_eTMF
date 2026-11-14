@@ -1,5 +1,6 @@
 import express from 'express';
 import { Milestone } from '../models/Milestone.js';
+import { Study } from '../models/Study.js';
 import { AuditLog } from '../models/AuditLog.js';
 
 const router = express.Router();
@@ -33,7 +34,7 @@ router.put('/:id', async (req, res) => {
       id: `aud_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       timestamp: new Date().toISOString(),
       user_id: req.body.user?.id || 'sys_user',
-      user_name: req.body.user?.name || 'Clinidea User',
+      user_name: req.body.user?.name || 'VigiThink User',
       user_role: req.body.user?.roleId || 'TMF Lead',
       action: 'MILESTONE_UPDATED',
       target_type: 'MILESTONE',
@@ -54,6 +55,25 @@ router.put('/:id', async (req, res) => {
 // POST /api/milestones - Create / import milestones
 router.post('/', async (req, res) => {
   try {
+    const totalStudies = await Study.countDocuments();
+    if (totalStudies === 0) {
+      return res.status(422).json({
+        success: false,
+        error: 'Clinical Protocol Required: No active clinical study found. A clinical study protocol must exist before milestones can be configured.'
+      });
+    }
+
+    const studyId = req.body.study_id;
+    if (studyId) {
+      const targetStudy = await Study.findOne({ id: studyId });
+      if (!targetStudy) {
+        return res.status(404).json({
+          success: false,
+          error: `Clinical Study Protocol '${studyId}' does not exist.`
+        });
+      }
+    }
+
     const milestone = new Milestone(req.body);
     const saved = await milestone.save();
     res.status(201).json({ success: true, data: saved });

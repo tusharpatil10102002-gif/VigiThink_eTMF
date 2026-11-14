@@ -48,7 +48,7 @@ export default function MoveDocumentModal({ onClose, sourceDoc }) {
       <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-lg w-full overflow-hidden text-xs font-sans">
         
         {/* Header */}
-        <div className="bg-clinevo-header text-white px-4 py-3 flex items-center justify-between">
+        <div className="bg-[#0B2240] text-white px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <MoveRight className="w-4 h-4 text-sky-400" />
             <h3 className="font-bold text-sm">Move Document (Reclassify TMF Artifact)</h3>

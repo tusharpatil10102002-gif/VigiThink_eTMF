@@ -8,13 +8,14 @@ import { AuditLog } from '../models/AuditLog.js';
 import { Milestone } from '../models/Milestone.js';
 import { Query } from '../models/Query.js';
 import { Folder } from '../models/Folder.js';
+import { Notification } from '../models/Notification.js';
 import { seedDatabase } from '../data/seeder.js';
 
 const router = express.Router();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const uploadDir = path.join(__dirname, '../uploads');
 
-// GET /api/system/status — Current database record counts
+// GET /api/system/status: Current database record counts
 router.get('/status', async (req, res) => {
   try {
     const [documentsCount, studiesCount, auditLogsCount, queriesCount, milestonesCount, foldersCount] = await Promise.all([
@@ -42,9 +43,17 @@ router.get('/status', async (req, res) => {
   }
 });
 
-// POST /api/system/clear-data — Wipe all test documents, folders, uploaded files, audit logs, queries, milestones
+// POST /api/system/clear-data: Wipe all test documents, folders, uploaded files, audit logs, queries, milestones (Admin Only)
 router.post('/clear-data', async (req, res) => {
   try {
+    const userRole = req.body?.adminUser?.roleId || req.body?.user?.roleId || req.headers['x-user-role'];
+    if (userRole !== 'system_admin') {
+      return res.status(403).json({
+        success: false,
+        error: '403 Forbidden: Only System Administrator has authorization to execute system maintenance or data clear.'
+      });
+    }
+
     const { clearStudies } = req.body || {};
 
     await Promise.all([
@@ -52,7 +61,8 @@ router.post('/clear-data', async (req, res) => {
       AuditLog.deleteMany({}),
       Milestone.deleteMany({}),
       Query.deleteMany({}),
-      Folder.deleteMany({})
+      Folder.deleteMany({}),
+      Notification.deleteMany({})
     ]);
 
     if (clearStudies) {
@@ -83,9 +93,17 @@ router.post('/clear-data', async (req, res) => {
   }
 });
 
-// POST /api/system/reset-demo — Re-seed demo dataset if needed
+// POST /api/system/reset-demo: Re-seed demo dataset if needed (Admin Only)
 router.post('/reset-demo', async (req, res) => {
   try {
+    const userRole = req.body?.adminUser?.roleId || req.body?.user?.roleId || req.headers['x-user-role'];
+    if (userRole !== 'system_admin') {
+      return res.status(403).json({
+        success: false,
+        error: '403 Forbidden: Only System Administrator has authorization to execute demo system reset.'
+      });
+    }
+
     await Promise.all([
       Document.deleteMany({}),
       Study.deleteMany({}),

@@ -5,15 +5,27 @@ const SiteSchema = new mongoose.Schema({
   number: { type: String },
   name: { type: String, required: true },
   country: { type: String, default: 'India' },
+  state: { type: String },
+  city: { type: String },
+  address: { type: String },
   piName: { type: String, required: true },
+  piEmail: { type: String },
+  piContact: { type: String },
   piLicense: { type: String },
+  assignedPiId: { type: String },
+  crcName: { type: String },
+  crcEmail: { type: String },
+  assignedCrcId: { type: String },
+  assignedCraId: { type: String },
+  assignedCraName: { type: String },
   assignedStudent: { type: String },
   status: { type: String, default: 'Active' },
   targetEnrollment: { type: Number, default: 20 },
   actualEnrollment: { type: Number, default: 0 },
   enrolledCount: { type: Number, default: 0 },
   initiationDate: { type: String },
-  activationDate: { type: String }
+  activationDate: { type: String },
+  completenessPct: { type: Number, default: 0 }
 }, { _id: false });
 
 const StudySchema = new mongoose.Schema({
@@ -41,6 +53,7 @@ const StudySchema = new mongoose.Schema({
   filingLagDays: { type: Number, default: 0 },
   countries: { type: Array, default: [] },
   milestones: { type: Array, default: [] },
+  closeoutChecklist: { type: mongoose.Schema.Types.Mixed, default: {} },
   sites: [SiteSchema]
 }, {
   timestamps: true

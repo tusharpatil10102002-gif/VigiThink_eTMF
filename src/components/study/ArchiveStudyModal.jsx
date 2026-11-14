@@ -65,13 +65,13 @@ export default function ArchiveStudyModal({ study, onClose }) {
                 <div className="flex justify-between items-center">
                   <span>Missing Document Placeholders:</span>
                   <span className={`font-bold ${missingDocs === 0 ? 'text-emerald-700' : 'text-rose-600'}`}>
-                    {missingDocs} {missingDocs === 0 ? '✓ Ready' : '⚠ Gaps Pending'}
+                    {missingDocs} {missingDocs === 0 ? '(Ready)' : '(Gaps Pending)'}
                   </span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span>Pending QC Reviews / Queries:</span>
                   <span className={`font-bold ${pendingQc === 0 ? 'text-emerald-700' : 'text-amber-600'}`}>
-                    {pendingQc} {pendingQc === 0 ? '✓ Clear' : '⚠ Action Required'}
+                    {pendingQc} {pendingQc === 0 ? '(Clear)' : '(Action Required)'}
                   </span>
                 </div>
                 <div className="flex justify-between items-center">

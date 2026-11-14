@@ -1,5 +1,6 @@
 import express from 'express';
 import { Folder } from '../models/Folder.js';
+import { Study } from '../models/Study.js';
 import { AuditLog } from '../models/AuditLog.js';
 
 const router = express.Router();
@@ -11,13 +12,13 @@ const logFolderAudit = async (req, action, folder, oldVal, newVal, reason) => {
       id: `aud_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       timestamp: new Date().toISOString(),
       user_id: user.id || req.headers['x-user-id'] || 'sys_user',
-      user_name: user.name || req.headers['x-user-name'] || 'Clinidea User',
+      user_name: user.name || req.headers['x-user-name'] || 'VigiThink User',
       user_role: user.roleId || req.headers['x-user-role'] || 'TMF User',
       action,
       target_type: 'FOLDER',
       target_id: folder.id,
       target_title: folder.name,
-      study_id: folder.study_id || 'CLIN-001',
+      study_id: folder.study_id || '',
       old_value: oldVal || 'N/A',
       new_value: newVal || 'N/A',
       ip_address: req.ip || '127.0.0.1',
@@ -48,6 +49,36 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const { id, name, study_id, tmf_zone_id, tmf_section_id, site_id, user } = req.body;
+    const userRole = user?.roleId || user?.role || req.headers['x-user-role'];
+
+    // RBAC Security Guard: Only TMF Lead, CTM, Doc Controller & Admin can manage folders
+    const unauthorizedFolderRoles = ['site_user', 'investigator', 'cra', 'auditor', 'qa'];
+    if (userRole && unauthorizedFolderRoles.includes(userRole)) {
+      return res.status(403).json({
+        success: false,
+        error: `403 Forbidden: Role '${userRole}' is not authorized to create custom folders in the eTMF structure.`
+      });
+    }
+
+    // Protocol Precondition Guard: A Clinical Study Protocol must exist before creating custom folders
+    const totalStudies = await Study.countDocuments();
+    if (totalStudies === 0) {
+      return res.status(422).json({
+        success: false,
+        error: 'Clinical Protocol Required: No active clinical study found. A clinical study protocol must be created by the System Administrator before custom folders can be added to the eTMF structure.'
+      });
+    }
+
+    if (study_id && study_id !== 'ALL') {
+      const targetStudy = await Study.findOne({ id: study_id });
+      if (!targetStudy) {
+        return res.status(404).json({
+          success: false,
+          error: `Clinical Study Protocol '${study_id}' does not exist.`
+        });
+      }
+    }
+
     if (!name || !name.trim()) {
       return res.status(400).json({ success: false, error: 'Folder name is required' });
     }
@@ -77,7 +108,17 @@ router.post('/', async (req, res) => {
 // PUT /api/folders/:id - Rename custom folder
 router.put('/:id', async (req, res) => {
   try {
-    const { name } = req.body;
+    const { name, user } = req.body;
+    const userRole = user?.roleId || user?.role || req.headers['x-user-role'];
+
+    const unauthorizedFolderRoles = ['site_user', 'investigator', 'cra', 'auditor', 'qa'];
+    if (userRole && unauthorizedFolderRoles.includes(userRole)) {
+      return res.status(403).json({
+        success: false,
+        error: `403 Forbidden: Role '${userRole}' cannot rename eTMF folders.`
+      });
+    }
+
     const folder = await Folder.findOne({ id: req.params.id });
     if (!folder) {
       return res.status(404).json({ success: false, error: 'Folder not found' });
@@ -97,6 +138,17 @@ router.put('/:id', async (req, res) => {
 // DELETE /api/folders/:id - Delete custom folder
 router.delete('/:id', async (req, res) => {
   try {
+    const user = req.body?.user ? (typeof req.body.user === 'string' ? JSON.parse(req.body.user) : req.body.user) : {};
+    const userRole = user?.roleId || user?.role || req.headers['x-user-role'];
+
+    const unauthorizedFolderRoles = ['site_user', 'investigator', 'cra', 'auditor', 'qa'];
+    if (userRole && unauthorizedFolderRoles.includes(userRole)) {
+      return res.status(403).json({
+        success: false,
+        error: `403 Forbidden: Role '${userRole}' cannot delete eTMF folders.`
+      });
+    }
+
     const folder = await Folder.findOne({ id: req.params.id });
     if (!folder) {
       return res.status(404).json({ success: false, error: 'Folder not found' });
