@@ -47,9 +47,9 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Static uploads serving with graceful fallback to prevent broken file links
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-app.get('/uploads/:filename', async (req, res) => {
+// Static uploads serving with graceful fallback to prevent broken file links (supports /uploads and /etmf/uploads)
+app.use(['/uploads', '/etmf/uploads'], express.static(path.join(__dirname, 'uploads')));
+app.get(['/uploads/:filename', '/etmf/uploads/:filename'], async (req, res) => {
   const filePath = path.join(__dirname, 'uploads', req.params.filename);
   if (fs.existsSync(filePath)) {
     return res.sendFile(filePath);
@@ -115,23 +115,26 @@ app.get('/uploads/:filename', async (req, res) => {
   }
 });
 
-// API Routes
-app.use('/api/documents', documentsRouter);
-app.use('/api/studies', studiesRouter);
-app.use('/api/audit-logs', auditLogsRouter);
-app.use('/api/audit', auditLogsRouter);
-app.use('/api/milestones', milestonesRouter);
-app.use('/api/queries', queriesRouter);
-app.use('/api/reports', reportsRouter);
-app.use('/api/system', systemRouter);
-app.use('/api/users', usersRouter);
-app.use('/api/folders', foldersRouter);
-app.use('/api/v1', apiV1Router);
-app.use('/api/notifications', notificationsRouter);
-app.use('/api/workflows', workflowsRouter);
+// API Routes: mounted on both standard root '/api' and subfolder '/etmf/api' for Hostinger
+const apiPrefixes = ['/api', '/etmf/api'];
+apiPrefixes.forEach(prefix => {
+  app.use(`${prefix}/documents`, documentsRouter);
+  app.use(`${prefix}/studies`, studiesRouter);
+  app.use(`${prefix}/audit-logs`, auditLogsRouter);
+  app.use(`${prefix}/audit`, auditLogsRouter);
+  app.use(`${prefix}/milestones`, milestonesRouter);
+  app.use(`${prefix}/queries`, queriesRouter);
+  app.use(`${prefix}/reports`, reportsRouter);
+  app.use(`${prefix}/system`, systemRouter);
+  app.use(`${prefix}/users`, usersRouter);
+  app.use(`${prefix}/folders`, foldersRouter);
+  app.use(`${prefix}/v1`, apiV1Router);
+  app.use(`${prefix}/notifications`, notificationsRouter);
+  app.use(`${prefix}/workflows`, workflowsRouter);
+});
 
 // System Health Endpoint
-app.get('/api/health', (req, res) => {
+app.get(['/api/health', '/etmf/api/health'], (req, res) => {
   res.json({
     status: 'OK',
     environment: process.env.NODE_ENV || 'production',
@@ -142,10 +145,11 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Serve Production Frontend Build (dist/) if available
+// Serve Production Frontend Build (dist/) if available (supports root / and /etmf/)
 if (fs.existsSync(distPath)) {
   app.use(express.static(distPath));
-  app.get(/^(?!\/api|\/uploads).*/, (req, res) => {
+  app.use('/etmf', express.static(distPath));
+  app.get(/^(?!\/api|\/etmf\/api|\/uploads|\/etmf\/uploads).*/, (req, res) => {
     res.sendFile(path.join(distPath, 'index.html'));
   });
 }

@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { ROLES_DEFINITION, DEMO_USERS } from '../data/initialRolesData';
+import { apiFetch } from '../utils/api';
 
 const AuthContext = createContext();
 
@@ -45,7 +46,7 @@ export const AuthProvider = ({ children }) => {
   // Fetch live users from MongoDB
   const fetchUsers = async () => {
     try {
-      const res = await fetch('/api/users');
+      const res = await apiFetch('/api/users');
       if (res.ok) {
         const json = await res.json();
         if (json.success && Array.isArray(json.data) && json.data.length > 0) {
@@ -90,7 +91,7 @@ export const AuthProvider = ({ children }) => {
 
     // Try backend authentication first
     try {
-      const res = await fetch('/api/users/login', {
+      const res = await apiFetch('/api/users/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ loginInput, password })
@@ -169,7 +170,7 @@ export const AuthProvider = ({ children }) => {
   // Admin: Create new user credential
   const createUserCredential = async (newUserData) => {
     try {
-      const res = await fetch('/api/users', {
+      const res = await apiFetch('/api/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...newUserData, adminUser: currentUser })
@@ -188,7 +189,7 @@ export const AuthProvider = ({ children }) => {
   // Admin: Update user role, scope, or credential details
   const updateUserCredential = async (userId, updatedFields) => {
     try {
-      const res = await fetch(`/api/users/${userId}`, {
+      const res = await apiFetch(`/api/users/${userId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...updatedFields, adminUser: currentUser })
@@ -214,7 +215,7 @@ export const AuthProvider = ({ children }) => {
   // Admin: Activate / Deactivate user account
   const toggleUserActiveStatus = async (userId) => {
     try {
-      const res = await fetch(`/api/users/${userId}/toggle-active`, {
+      const res = await apiFetch(`/api/users/${userId}/toggle-active`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ adminUser: currentUser })
@@ -233,7 +234,7 @@ export const AuthProvider = ({ children }) => {
   // Admin: Delete user credential
   const deleteUserCredential = async (userId) => {
     try {
-      const res = await fetch(`/api/users/${userId}`, {
+      const res = await apiFetch(`/api/users/${userId}`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ adminUser: currentUser })

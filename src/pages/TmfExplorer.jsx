@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useTMFData } from '../context/TMFDataContext';
 import { useAuth } from '../context/AuthContext';
+import { resolveApiUrl } from '../utils/api';
 import { 
   Folder, 
   Search, 
@@ -892,7 +893,7 @@ export default function TmfExplorer() {
 
                               {/* 2. Direct Open in Browser Tab */}
                               <a
-                                href={doc.local_blob_url || doc.file_path || `/api/documents/${doc.document_id}/download`}
+                                href={doc.local_blob_url || (doc.file_path ? resolveApiUrl(doc.file_path) : resolveApiUrl(`/api/documents/${doc.document_id}/download`))}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded border border-emerald-200 text-[10px] font-bold flex items-center gap-1 cursor-pointer"

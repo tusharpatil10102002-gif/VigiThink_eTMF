@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { apiFetch, resolveApiUrl } from '../utils/api';
 import { DIA_TMF_ZONES } from '../data/diaTmfReferenceModel';
 import { INITIAL_STUDIES } from '../data/initialStudiesData';
 import { INITIAL_DOCUMENTS, INITIAL_AUDIT_LOGS } from '../data/initialDocumentsData';
@@ -37,7 +38,7 @@ export const TMFDataProvider = ({ children }) => {
   const fetchAllData = async () => {
     try {
       // 1. Fetch studies
-      const studiesRes = await fetch('/api/studies');
+      const studiesRes = await apiFetch('/api/studies');
       if (studiesRes.ok) {
         const studiesJson = await studiesRes.json();
         if (studiesJson.success && Array.isArray(studiesJson.data)) {
@@ -52,7 +53,7 @@ export const TMFDataProvider = ({ children }) => {
       }
 
       // 2. Fetch documents
-      const docsRes = await fetch('/api/documents');
+      const docsRes = await apiFetch('/api/documents');
       if (docsRes.ok) {
         const docsJson = await docsRes.json();
         if (docsJson.success && Array.isArray(docsJson.data)) {
@@ -61,7 +62,7 @@ export const TMFDataProvider = ({ children }) => {
       }
 
       // 3. Fetch audit logs
-      const auditRes = await fetch('/api/audit-logs');
+      const auditRes = await apiFetch('/api/audit-logs');
       if (auditRes.ok) {
         const auditJson = await auditRes.json();
         if (auditJson.success && Array.isArray(auditJson.data)) {
@@ -70,7 +71,7 @@ export const TMFDataProvider = ({ children }) => {
       }
 
       // 4. Fetch milestones
-      const milestonesRes = await fetch(`/api/milestones?study_id=${selectedStudyId}`);
+      const milestonesRes = await apiFetch(`/api/milestones?study_id=${selectedStudyId}`);
       if (milestonesRes.ok) {
         const milestonesJson = await milestonesRes.json();
         if (milestonesJson.success && Array.isArray(milestonesJson.data)) {
@@ -79,7 +80,7 @@ export const TMFDataProvider = ({ children }) => {
       }
 
       // 5. Fetch custom folders
-      const foldersRes = await fetch('/api/folders');
+      const foldersRes = await apiFetch('/api/folders');
       if (foldersRes.ok) {
         const foldersJson = await foldersRes.json();
         if (foldersJson.success && Array.isArray(foldersJson.data)) {
@@ -91,7 +92,7 @@ export const TMFDataProvider = ({ children }) => {
       }
 
       // 6. Fetch quality queries
-      const queriesRes = await fetch('/api/queries');
+      const queriesRes = await apiFetch('/api/queries');
       if (queriesRes.ok) {
         const queriesJson = await queriesRes.json();
         if (queriesJson.success && Array.isArray(queriesJson.data)) {
@@ -106,7 +107,7 @@ export const TMFDataProvider = ({ children }) => {
   // Clear all test data from database
   const clearAllTestData = async (clearStudies = false, user = null) => {
     try {
-      const res = await fetch('/api/system/clear-data', {
+      const res = await apiFetch('/api/system/clear-data', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ clearStudies, user })
@@ -162,7 +163,7 @@ export const TMFDataProvider = ({ children }) => {
     setAuditLogs(prev => [newLog, ...prev]);
 
     try {
-      await fetch('/api/audit-logs', {
+      await apiFetch('/api/audit-logs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newLog)
@@ -227,7 +228,7 @@ export const TMFDataProvider = ({ children }) => {
         formData.append('submitted_by_role', user?.roleId || 'site_user');
         formData.append('user', JSON.stringify(user));
 
-        const res = await fetch('/api/documents/upload', {
+        const res = await apiFetch('/api/documents/upload', {
           method: 'POST',
           body: formData
         });
@@ -301,7 +302,7 @@ export const TMFDataProvider = ({ children }) => {
     }));
 
     try {
-      await fetch(`/api/documents/${docId}/metadata`, {
+      await apiFetch(`/api/documents/${docId}/metadata`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ updatedFields, user, reason })
@@ -364,7 +365,7 @@ export const TMFDataProvider = ({ children }) => {
     }));
 
     try {
-      await fetch(`/api/documents/${docId}/qc`, {
+      await apiFetch(`/api/documents/${docId}/qc`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ qcStatus, comments: finalComments, qualityIssueType: finalIssueType, user })
@@ -401,7 +402,7 @@ export const TMFDataProvider = ({ children }) => {
       };
       setQueries(prev => [newQuery, ...prev]);
       try {
-        await fetch('/api/queries', {
+        await apiFetch('/api/queries', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(newQuery)
@@ -436,7 +437,7 @@ export const TMFDataProvider = ({ children }) => {
     }));
 
     try {
-      await fetch(`/api/documents/${docId}/sign`, {
+      await apiFetch(`/api/documents/${docId}/sign`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user, meaning: signerMeaning, passwordVerified: true })
@@ -459,7 +460,7 @@ export const TMFDataProvider = ({ children }) => {
   // Advance 11-step lifecycle workflow stage
   const advanceDocumentLifecycle = async (docId, targetStage, notes, status, user) => {
     try {
-      const res = await fetch(`/api/documents/${docId}/lifecycle`, {
+      const res = await apiFetch(`/api/documents/${docId}/lifecycle`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ targetStage, notes, status, user })
@@ -496,7 +497,7 @@ export const TMFDataProvider = ({ children }) => {
     }));
 
     try {
-      await fetch(`/api/documents/${docId}/checkout`, {
+      await apiFetch(`/api/documents/${docId}/checkout`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user, purpose })
@@ -533,7 +534,7 @@ export const TMFDataProvider = ({ children }) => {
     }));
 
     try {
-      await fetch(`/api/documents/${docId}/comments`, {
+      await apiFetch(`/api/documents/${docId}/comments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user, text: commentText })
@@ -580,7 +581,7 @@ export const TMFDataProvider = ({ children }) => {
     setSelectedStudyId(newStudy.id);
 
     try {
-      await fetch('/api/studies', {
+      await apiFetch('/api/studies', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...newStudy, user })
@@ -606,7 +607,7 @@ export const TMFDataProvider = ({ children }) => {
     }));
 
     try {
-      await fetch(`/api/studies/${studyId}/country`, {
+      await apiFetch(`/api/studies/${studyId}/country`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ country: countryData, user })
@@ -636,7 +637,7 @@ export const TMFDataProvider = ({ children }) => {
     }));
 
     try {
-      await fetch(`/api/studies/${studyId}/site`, {
+      await apiFetch(`/api/studies/${studyId}/site`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ countryId, site: siteData, user })
@@ -666,7 +667,7 @@ export const TMFDataProvider = ({ children }) => {
     }));
 
     try {
-      await fetch(`/api/studies/${studyId}/archive`, {
+      await apiFetch(`/api/studies/${studyId}/archive`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reason, user })
@@ -700,7 +701,7 @@ export const TMFDataProvider = ({ children }) => {
     setDocuments(prev => [copiedDoc, ...prev]);
 
     try {
-      await fetch(`/api/documents/${docId}/copy`, {
+      await apiFetch(`/api/documents/${docId}/copy`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...copyPayload, user })
@@ -730,7 +731,7 @@ export const TMFDataProvider = ({ children }) => {
     }));
 
     try {
-      await fetch(`/api/documents/${docId}/move`, {
+      await apiFetch(`/api/documents/${docId}/move`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...movePayload, user })
@@ -760,7 +761,7 @@ export const TMFDataProvider = ({ children }) => {
     }));
 
     try {
-      await fetch(`/api/documents/${docId}/version`, {
+      await apiFetch(`/api/documents/${docId}/version`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...versionData, user })
@@ -785,7 +786,7 @@ export const TMFDataProvider = ({ children }) => {
       return;
     }
 
-    const downloadUrl = `/api/documents/${doc.document_id}/download`;
+    const downloadUrl = resolveApiUrl(`/api/documents/${doc.document_id}/download`);
     const anchor = document.createElement('a');
     anchor.href = downloadUrl;
     anchor.download = doc.file_name || `${doc.document_id}_Part11_Certified.txt`;
@@ -806,7 +807,7 @@ export const TMFDataProvider = ({ children }) => {
     setDocuments(prev => prev.map(d => (d.document_id === docId ? { ...d, ...updatedFields } : d)));
 
     try {
-      await fetch(`/api/documents/${docId}/metadata`, {
+      await apiFetch(`/api/documents/${docId}/metadata`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -836,7 +837,7 @@ export const TMFDataProvider = ({ children }) => {
     };
     setCustomFolders(prev => [...prev, newFolder]);
     try {
-      await fetch('/api/folders', {
+      await apiFetch('/api/folders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...newFolder, user })
@@ -852,7 +853,7 @@ export const TMFDataProvider = ({ children }) => {
     const target = customFolders.find(f => f.id === folderId);
     setCustomFolders(prev => prev.map(f => (f.id === folderId ? { ...f, name: newName.trim() } : f)));
     try {
-      await fetch(`/api/folders/${folderId}`, {
+      await apiFetch(`/api/folders/${folderId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newName.trim(), user })
@@ -867,7 +868,7 @@ export const TMFDataProvider = ({ children }) => {
     const target = customFolders.find(f => f.id === folderId);
     setCustomFolders(prev => prev.filter(f => f.id !== folderId));
     try {
-      await fetch(`/api/folders/${folderId}`, {
+      await apiFetch(`/api/folders/${folderId}`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user })
@@ -967,7 +968,7 @@ export const TMFDataProvider = ({ children }) => {
     }));
 
     try {
-      await fetch('/api/queries', {
+      await apiFetch('/api/queries', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newQuery)
@@ -1008,7 +1009,7 @@ export const TMFDataProvider = ({ children }) => {
     }
 
     try {
-      await fetch(`/api/queries/${queryId}/resolve`, {
+      await apiFetch(`/api/queries/${queryId}/resolve`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ response: finalResponse, status: newStatus, user })
@@ -1024,7 +1025,7 @@ export const TMFDataProvider = ({ children }) => {
   const deleteDocument = async (docId, user, reason = "Deleted by System Administrator") => {
     setDocuments(prev => prev.filter(d => d.document_id !== docId));
     try {
-      await fetch(`/api/documents/${docId}`, {
+      await apiFetch(`/api/documents/${docId}`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user, reason })
@@ -1044,7 +1045,7 @@ export const TMFDataProvider = ({ children }) => {
     }
 
     try {
-      await fetch(`/api/studies/${encodeURIComponent(studyId)}`, {
+      await apiFetch(`/api/studies/${encodeURIComponent(studyId)}`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user, reason })

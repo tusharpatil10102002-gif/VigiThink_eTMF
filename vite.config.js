@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 
 // https://vitejs.dev/config/
 export default defineConfig({
+  base: process.env.VITE_BASE_PATH || (process.env.NODE_ENV === 'development' ? '/' : '/etmf/'),
   plugins: [react()],
   build: {
     chunkSizeWarningLimit: 800,
@@ -24,7 +25,17 @@ export default defineConfig({
         changeOrigin: true,
         secure: false,
       },
+      '/etmf/api': {
+        target: 'http://localhost:5000',
+        changeOrigin: true,
+        secure: false,
+      },
       '/uploads': {
+        target: 'http://localhost:5000',
+        changeOrigin: true,
+        secure: false,
+      },
+      '/etmf/uploads': {
         target: 'http://localhost:5000',
         changeOrigin: true,
         secure: false,

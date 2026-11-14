@@ -247,12 +247,19 @@ class ProductionErrorBoundary extends React.Component {
   }
 }
 
+const getBasename = () => {
+  if (typeof window !== 'undefined' && window.location.pathname.startsWith('/etmf')) {
+    return '/etmf';
+  }
+  return '/';
+};
+
 export default function App() {
   return (
     <ProductionErrorBoundary>
       <AuthProvider>
         <TMFDataProvider>
-          <Router>
+          <Router basename={getBasename()}>
             <Routes>
               <Route path="/login" element={<LoginPage />} />
               <Route path="/*" element={<MainAppLayout />} />
