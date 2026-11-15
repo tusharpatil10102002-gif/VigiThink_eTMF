@@ -1,10 +1,33 @@
 import express from 'express';
+import multer from 'multer';
+import crypto from 'crypto';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
 import { Query } from '../models/Query.js';
 import { Document } from '../models/Document.js';
 import { Study } from '../models/Study.js';
 import { AuditLog } from '../models/AuditLog.js';
 
 const router = express.Router();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const uploadDir = path.join(__dirname, '../../uploads');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const cleanName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
+    cb(null, `${Date.now()}_${cleanName}`);
+  }
+});
+const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 } });
 
 // GET /api/queries - Get all quality queries
 router.get('/', async (req, res) => {
@@ -108,8 +131,8 @@ router.post('/', async (req, res) => {
   }
 });
 
-// PUT /api/queries/:id/resolve - Resolve or respond to quality query
-router.put('/:id/resolve', async (req, res) => {
+// Resolve or respond to quality query handler
+const handleResolveQuery = async (req, res) => {
   try {
     const query = await Query.findOne({ query_id: req.params.id });
     if (!query) {
@@ -119,6 +142,15 @@ router.put('/:id/resolve', async (req, res) => {
     const user = req.body.user ? (typeof req.body.user === 'string' ? JSON.parse(req.body.user) : req.body.user) : {};
     const userRole = user.roleId || user.role || req.headers['x-user-role'];
     const requestedStatus = req.body.status || 'Resolved';
+
+    // Compulsory Comment Validation under 21 CFR Part 11
+    const responseText = (req.body.response || req.body.comment || req.body.notes || '').trim();
+    if (!responseText) {
+      return res.status(400).json({
+        success: false,
+        error: 'Validation Error: Remediation comment/explanation is mandatory under 21 CFR Part 11 to respond to or resolve a quality query.'
+      });
+    }
 
     // RBAC Security Guard: If trying to mark 'Resolved' or 'Closed' (which clears document QC), user MUST have qcPass permission
     const unauthorizedApprovers = ['site_user', 'investigator', 'cra', 'auditor'];
@@ -137,11 +169,68 @@ router.put('/:id/resolve', async (req, res) => {
       : requestedStatus;
 
     query.status = finalStatus;
-    query.response = req.body.response || 'Remediation details provided by site staff';
+    query.response = responseText;
     if (finalStatus === 'Resolved' || finalStatus === 'Closed') {
       query.resolved_by_name = user.name || 'QC Reviewer';
       query.resolved_date = new Date().toISOString().split('T')[0];
     }
+
+    // Handle Revised Replacement File Upload if user attached a new document
+    let uploadedFileDetails = null;
+    if (req.file) {
+      const fileBuffer = fs.readFileSync(req.file.path);
+      const sha256 = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+      uploadedFileDetails = {
+        name: req.file.originalname,
+        path: `/uploads/${req.file.filename}`,
+        size: req.file.size,
+        hash: sha256
+      };
+
+      query.attachment_file_name = req.file.originalname;
+      query.attachment_file_path = `/uploads/${req.file.filename}`;
+
+      const targetDoc = await Document.findOne({ document_id: query.document_id });
+      if (targetDoc) {
+        if (!targetDoc.versions_history) targetDoc.versions_history = [];
+        targetDoc.versions_history.push({
+          version_number: targetDoc.version_number || '1.0',
+          file_name: targetDoc.file_name,
+          file_path: targetDoc.file_path,
+          uploaded_by_id: targetDoc.uploaded_by_id,
+          uploaded_by_name: targetDoc.uploaded_by_name,
+          upload_date_time: targetDoc.upload_date_time || new Date().toISOString(),
+          checksum_hash: targetDoc.checksum_hash,
+          notes: `Pre-query remediation snapshot (Query ID: ${query.query_id})`,
+          status: 'Superseded'
+        });
+
+        const curVer = parseFloat(targetDoc.version_number || '1.0');
+        targetDoc.version_number = (curVer + 0.1).toFixed(1);
+        targetDoc.file_name = req.file.originalname;
+        targetDoc.file_path = `/uploads/${req.file.filename}`;
+        targetDoc.file_size_bytes = req.file.size;
+        targetDoc.file_mimetype = req.file.mimetype;
+        targetDoc.checksum_hash = sha256;
+        targetDoc.upload_date_time = new Date().toISOString();
+        targetDoc.status = 'Submitted';
+        targetDoc.qc_status = 'In Progress';
+        targetDoc.qc_score = 'Amber';
+        targetDoc.quality_issue_flag = false;
+        targetDoc.resubmitted_version_number = targetDoc.version_number;
+
+        if (!targetDoc.comments) targetDoc.comments = [];
+        targetDoc.comments.push({
+          id: `comm_${Date.now()}`,
+          user: user.name || 'Site User',
+          date: new Date().toISOString().replace('T', ' ').substring(0, 16),
+          text: `Revised document file attached (v${targetDoc.version_number}): ${req.file.originalname}. Query notes: ${responseText}`
+        });
+
+        await targetDoc.save();
+      }
+    }
+
     const updated = await query.save();
 
     // Only approve target document if query is officially Resolved/Closed by authorized QA/Lead!
@@ -182,15 +271,21 @@ router.put('/:id/resolve', async (req, res) => {
       study_id: query.study_id,
       old_value: 'Open',
       new_value: finalStatus,
-      reason: query.response
+      reason: uploadedFileDetails
+        ? `${responseText} (Attached revised file: ${uploadedFileDetails.name})`
+        : responseText
     });
     await auditRecord.save();
 
-    res.json({ success: true, data: updated });
+    res.json({ success: true, data: updated, file: uploadedFileDetails });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
-});
+};
+
+// PUT & POST /api/queries/:id/resolve - Resolve or respond to quality query
+router.put('/:id/resolve', upload.single('file'), handleResolveQuery);
+router.post('/:id/resolve', upload.single('file'), handleResolveQuery);
 
 // DELETE /api/queries/:id - Delete query (System Admin only)
 router.delete('/:id', async (req, res) => {

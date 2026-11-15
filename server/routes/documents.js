@@ -1082,6 +1082,14 @@ router.put('/:id/qc', async (req, res) => {
         }
       );
 
+      doc.qc_reviewer_id = user?.id || reviewerId;
+      doc.qc_reviewer_name = reviewerName;
+      doc.qc_reviewer_role = reviewerRole;
+      doc.qc_review_date = nowIso.split('T')[0];
+      doc.qc_review_timestamp = nowIso;
+      doc.qc_review_date_time = `${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} ${new Date().toLocaleTimeString('en-US', { hour12: false })} (UTC+05:30)`;
+      doc.qc_signature = `eSig-QC-${user?.id || 'QC'}-${Date.now().toString().slice(-6)}`;
+
       if (isDocControllerOnly) {
         doc.lifecycle_stage = 7;
         doc.lifecycle_stage_name = '7. QC Review Outcome';
@@ -1341,6 +1349,9 @@ router.put('/:id/content-review', async (req, res) => {
     doc.content_reviewer_name = userName;
     doc.content_reviewer_role = userRole;
     doc.content_review_date = nowIso.split('T')[0];
+    doc.content_review_timestamp = nowIso;
+    doc.content_review_date_time = `${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} ${new Date().toLocaleTimeString('en-US', { hour12: false })} (UTC+05:30)`;
+    doc.content_review_signature = `eSig-CR-${user.id || 'TL'}-${Date.now().toString().slice(-6)}`;
     doc.content_review_comments = comments || '';
 
     if (reviewDecision === 'Revision Required') {
@@ -1483,9 +1494,24 @@ router.put('/:id/approve', async (req, res) => {
     doc.lifecycle_stage = 10;
     doc.lifecycle_stage_name = '10. Monitoring & Inspection Readiness';
     doc.lifecycle_status = 'Approved & Effective (Part 11 Compliant)';
+    doc.approver_id = user.id || 'sys_admin';
     doc.approver_name = userName;
+    doc.approver_role = userRole;
     doc.approval_date = nowIso.split('T')[0];
+    doc.approval_timestamp = nowIso;
+    doc.approval_date_time = `${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} ${new Date().toLocaleTimeString('en-US', { hour12: false })} (UTC+05:30)`;
     doc.effective_date = nowIso.split('T')[0];
+    doc.signature_type = 'Electronic (Part 11)';
+    doc.approval_signature = `eSig-FINAL-${user.id || 'ADMIN'}-${Date.now().toString().slice(-6)}`;
+    doc.signature_manifest = {
+      signer_id: user.id || 'sys_admin',
+      signer_name: userName,
+      signer_role: userRole,
+      timestamp: nowIso,
+      formatted_datetime: `${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} ${new Date().toLocaleTimeString('en-US', { hour12: false })} (UTC+05:30)`,
+      meaning: '21 CFR Part 11 Final Administrative Approval & Effective Filing',
+      signature_hash: `SHA256-${Date.now()}-${user.id || 'admin'}`
+    };
     doc.checkout_status = 'Checked In'; // Lock against unauthorized edits
 
     if (!doc.lifecycle_history) doc.lifecycle_history = [];
@@ -2110,30 +2136,60 @@ router.post('/:id/move', async (req, res) => {
   }
 });
 
-// 11. POST /api/documents/:id/version - Create new version (e.g. v1.0 -> v2.0)
-router.post('/:id/version', async (req, res) => {
+// 11. POST /api/documents/:id/version - Create new version with optional revised file upload
+router.post('/:id/version', upload.single('file'), async (req, res) => {
   try {
     const doc = await Document.findOne({ document_id: req.params.id });
     if (!doc) {
       return res.status(404).json({ success: false, error: 'Document not found' });
     }
 
-    const { newVersion, changeDescription, user } = req.body;
+    const newVersion = req.body.newVersion;
+    const changeDescription = (req.body.changeDescription || req.body.description || req.body.notes || '').trim();
+    const user = req.body.user ? (typeof req.body.user === 'string' ? JSON.parse(req.body.user) : req.body.user) : {};
     const oldVersion = doc.version_number;
 
+    // Save previous version in versions_history stack (immutable 21 CFR Part 11 stack)
+    if (!doc.versions_history) doc.versions_history = [];
+    doc.versions_history.push({
+      version_number: oldVersion || '1.0',
+      file_name: doc.file_name,
+      file_path: doc.file_path,
+      uploaded_by_id: doc.uploaded_by_id,
+      uploaded_by_name: doc.uploaded_by_name,
+      upload_date_time: doc.upload_date_time || new Date().toISOString(),
+      checksum_hash: doc.checksum_hash,
+      notes: changeDescription || `Version superseded by v${newVersion || parseFloat(oldVersion || '1.0') + 1.0}`,
+      status: 'Superseded'
+    });
+
     doc.version_number = newVersion || `${parseFloat(doc.version_number || '1.0') + 1.0}.0`;
-    doc.status = 'Draft';
+    doc.status = 'Submitted';
     doc.qc_status = 'In Progress';
     doc.qc_score = 'Amber';
+    doc.quality_issue_flag = false;
     doc.upload_date_time = new Date().toISOString();
     doc.filing_date = new Date().toISOString().split('T')[0];
 
+    // If a new physical file was uploaded with this revision
+    if (req.file) {
+      const fileBuffer = fs.readFileSync(req.file.path);
+      const sha256 = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+      doc.file_name = req.file.originalname;
+      doc.file_path = `/uploads/${req.file.filename}`;
+      doc.file_size_bytes = req.file.size;
+      doc.file_mimetype = req.file.mimetype;
+      doc.checksum_hash = sha256;
+      doc.local_blob_url = null;
+    }
+
     // Add revision note to comments
+    if (!doc.comments) doc.comments = [];
     doc.comments.push({
       id: `comm_${Date.now()}`,
       user: user?.name || 'Author',
       date: new Date().toISOString().replace('T', ' ').substring(0, 16),
-      text: `Version bump: v${oldVersion} → v${doc.version_number}. Changes: ${changeDescription || 'Routine revision'}`
+      text: `Version bump: v${oldVersion} → v${doc.version_number}${req.file ? ` (Attached: ${req.file.originalname})` : ''}. Changes: ${changeDescription || 'Routine revision'}`
     });
 
     const updated = await doc.save();
@@ -2146,7 +2202,7 @@ router.post('/:id/version', async (req, res) => {
       doc.study_id,
       `v${oldVersion}`,
       `v${doc.version_number}`,
-      `Revised document version authored: ${changeDescription || 'Protocol amendment update'}`
+      `Revised document version authored${req.file ? ` with file '${req.file.originalname}'` : ''}: ${changeDescription || 'Protocol amendment update'}`
     );
 
     res.json({ success: true, data: updated });

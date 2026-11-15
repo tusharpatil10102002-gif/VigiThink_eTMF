@@ -10,7 +10,10 @@ import {
   Eye,
   Plus,
   XCircle,
-  X
+  X,
+  Upload,
+  FileText,
+  AlertCircle
 } from 'lucide-react';
 import DocumentViewerDrawer from '../components/document/DocumentViewerDrawer';
 
@@ -24,6 +27,8 @@ export default function QueriesManagementView() {
   const [selectedDoc, setSelectedDoc] = useState(null);
   const [respondingQueryId, setRespondingQueryId] = useState(null);
   const [responseText, setResponseText] = useState("");
+  const [queryFile, setQueryFile] = useState(null);
+  const [commentError, setCommentError] = useState("");
   const [showNewQueryModal, setShowNewQueryModal] = useState(false);
   const [newQueryDocId, setNewQueryDocId] = useState("");
   const [newQueryCategory, setNewQueryCategory] = useState("Missing Required Signature");
@@ -77,18 +82,28 @@ export default function QueriesManagementView() {
   const resolvedCount = scopedQueries.filter(q => q.status === 'Resolved' || q.status === 'Closed').length;
 
   const handleResolveSubmit = async (queryId, statusToSet = 'Resolved') => {
-    const finalResponse = responseText.trim() || (canQcPass ? 'Query remediated, verified against SOP-TMF-04, and cleared.' : 'Remediation explanation provided by site staff.');
-    
+    if (!responseText.trim()) {
+      setCommentError("Remediation comment/explanation is mandatory under 21 CFR Part 11 to resolve or respond to a query.");
+      return;
+    }
+    setCommentError("");
+
+    const finalResponse = responseText.trim();
     // Non-approvers submit response as 'Response Provided', not 'Resolved'
     const finalStatus = canQcPass ? statusToSet : 'Response Provided';
-    await resolveQuery(queryId, finalResponse, currentUser, finalStatus);
-    setRespondingQueryId(null);
-    setResponseText("");
-    
-    if (canQcPass) {
-      showToast(`Query ${queryId} marked as ${finalStatus} and target document approved!`);
-    } else {
-      showToast(`Remediation response recorded for Query ${queryId}. Awaiting QA inspection clearance.`);
+    try {
+      await resolveQuery(queryId, finalResponse, currentUser, finalStatus, queryFile);
+      setRespondingQueryId(null);
+      setResponseText("");
+      setQueryFile(null);
+      
+      if (canQcPass) {
+        showToast(`Query ${queryId} marked as ${finalStatus} and document verified!${queryFile ? ' (Replacement file uploaded)' : ''}`);
+      } else {
+        showToast(`Remediation response recorded for Query ${queryId}. Awaiting QA inspection clearance.${queryFile ? ' (Replacement file attached)' : ''}`);
+      }
+    } catch (err) {
+      setCommentError(err.message || "Failed to submit query resolution.");
     }
   };
 
@@ -260,6 +275,12 @@ export default function QueriesManagementView() {
                             <strong>Resolution:</strong> {q.response}
                           </div>
                         )}
+                        {q.attachment_file_name && (
+                          <div className="mt-1 flex items-center gap-1 text-[10px] font-mono text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded w-fit">
+                            <FileText className="w-3 h-3 text-blue-600 shrink-0" />
+                            <span>Attached Revision: {q.attachment_file_name}</span>
+                          </div>
+                        )}
                       </td>
                       <td className="p-3.5">
                         <span className={`px-2.5 py-0.5 rounded-full font-semibold text-[11px] border ${
@@ -295,16 +316,23 @@ export default function QueriesManagementView() {
                                     <>
                                       <button
                                         type="button"
-                                        onClick={() => setRespondingQueryId(q.query_id)}
+                                        onClick={() => {
+                                          setRespondingQueryId(q.query_id);
+                                          setCommentError("");
+                                        }}
                                         className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-semibold text-xs shadow-2xs cursor-pointer"
                                       >
                                         Verify / Resolve
                                       </button>
                                       <button
                                         type="button"
-                                        onClick={() => handleResolveSubmit(q.query_id, 'Resolved')}
+                                        onClick={() => {
+                                          setRespondingQueryId(q.query_id);
+                                          setResponseText("All quality criteria verified under SOP-TMF-04 and remediated.");
+                                          setCommentError("");
+                                        }}
                                         className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold text-xs shadow-2xs cursor-pointer flex items-center gap-1"
-                                        title="1-Click Mark Resolved & Approve Document"
+                                        title="Review & Quick Approve Document"
                                       >
                                         <CheckCircle2 className="w-3.5 h-3.5" /> Quick Approve
                                       </button>
@@ -317,7 +345,10 @@ export default function QueriesManagementView() {
                                     <>
                                       <button
                                         type="button"
-                                        onClick={() => setRespondingQueryId(q.query_id)}
+                                        onClick={() => {
+                                          setRespondingQueryId(q.query_id);
+                                          setCommentError("");
+                                        }}
                                         className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold text-xs shadow-2xs cursor-pointer"
                                         title="Submit Remediation Explanation for Quality Review"
                                       >
@@ -368,26 +399,49 @@ export default function QueriesManagementView() {
       {/* Respond / Remediate Modal */}
       {respondingQueryId && (
         <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-2xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-md w-full p-5 space-y-4 text-xs font-sans">
+          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-lg w-full p-5 space-y-4 text-xs font-sans">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="font-bold text-slate-900 text-sm">
+              <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                <HelpCircle className="w-4 h-4 text-amber-600" />
                 {canQcPass ? 'Remediate & Resolve Query' : 'Submit Query Remediation Response'} ({respondingQueryId})
               </h3>
-              <button onClick={() => setRespondingQueryId(null)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+              <button 
+                onClick={() => {
+                  setRespondingQueryId(null);
+                  setResponseText("");
+                  setQueryFile(null);
+                  setCommentError("");
+                }} 
+                className="text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
                 <X className="w-4 h-4" />
               </button>
             </div>
             
+            {/* Error Message for missing comment */}
+            {commentError && (
+              <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                <span>{commentError}</span>
+              </div>
+            )}
+
             <div className="space-y-1.5">
-              <label className="block font-semibold text-slate-700">
-                {canQcPass ? 'Resolution Actions & Verification Details:' : 'Site Remediation Explanation / Re-upload Details:'}
+              <label className="block font-semibold text-slate-700 flex items-center justify-between">
+                <span>{canQcPass ? 'Resolution Actions & Verification Details:' : 'Site Remediation Explanation / Notes:'} <span className="text-rose-600 font-bold">* (Compulsory)</span></span>
+                <span className="text-[10px] text-slate-400">21 CFR Part 11 Required</span>
               </label>
               <textarea
                 rows={4}
-                placeholder={canQcPass ? "Explain document correction, re-scan verification, or metadata update applied..." : "Explain corrective action taken (e.g. re-uploaded signed document, updated metadata)..."}
+                placeholder={canQcPass ? "Explain document correction, re-scan verification, or metadata update applied (Required)..." : "Explain corrective action taken, e.g. re-uploaded signed document, updated metadata, corrected typo (Required)..."}
                 value={responseText}
-                onChange={(e) => setResponseText(e.target.value)}
-                className="w-full bg-slate-50 focus:bg-white border border-slate-300 focus:border-emerald-500 rounded-lg p-2.5 text-xs focus:outline-none"
+                onChange={(e) => {
+                  setResponseText(e.target.value);
+                  if (commentError) setCommentError("");
+                }}
+                className={`w-full bg-slate-50 focus:bg-white border rounded-lg p-2.5 text-xs focus:outline-none ${
+                  commentError ? 'border-rose-400 focus:border-rose-500 bg-rose-50/20' : 'border-slate-300 focus:border-emerald-500'
+                }`}
                 autoFocus
               />
               {!canQcPass && (
@@ -397,10 +451,55 @@ export default function QueriesManagementView() {
               )}
             </div>
 
+            {/* Revised / Replacement File Attachment Input */}
+            <div className="space-y-2 p-3 bg-slate-50 border border-slate-200 rounded-lg">
+              <div className="flex items-center justify-between">
+                <label className="font-semibold text-slate-700 flex items-center gap-1.5">
+                  <Upload className="w-3.5 h-3.5 text-blue-600" />
+                  Attach Revised Document File (Optional):
+                </label>
+                {queryFile && (
+                  <button 
+                    type="button" 
+                    onClick={() => setQueryFile(null)}
+                    className="text-rose-500 hover:text-rose-700 text-[11px] font-medium cursor-pointer"
+                  >
+                    Remove file
+                  </button>
+                )}
+              </div>
+              <input
+                type="file"
+                accept=".pdf,.docx,.doc,.xlsx,.xls,.png,.jpg,.jpeg"
+                onChange={(e) => setQueryFile(e.target.files[0] || null)}
+                className="w-full text-xs text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
+              />
+              {queryFile ? (
+                <div className="p-2 bg-blue-50 border border-blue-200 rounded text-blue-800 text-[11px] flex items-center justify-between">
+                  <span className="font-medium truncate flex items-center gap-1">
+                    <FileText className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                    {queryFile.name} ({(queryFile.size / 1024).toFixed(1)} KB)
+                  </span>
+                  <span className="text-blue-700 text-[10px] bg-white px-2 py-0.5 rounded border border-blue-200 font-semibold shrink-0">
+                    Will increment version
+                  </span>
+                </div>
+              ) : (
+                <p className="text-[10px] text-slate-500">
+                  Uploading a revised document creates an immutable version snapshot of the current file, increments the version number, and submits it for QC verification.
+                </p>
+              )}
+            </div>
+
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
               <button
                 type="button"
-                onClick={() => setRespondingQueryId(null)}
+                onClick={() => {
+                  setRespondingQueryId(null);
+                  setResponseText("");
+                  setQueryFile(null);
+                  setCommentError("");
+                }}
                 className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-semibold cursor-pointer"
               >
                 Cancel

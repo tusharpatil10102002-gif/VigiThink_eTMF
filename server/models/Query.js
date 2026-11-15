@@ -11,6 +11,8 @@ const QuerySchema = new mongoose.Schema({
   raised_date: { type: String, default: () => new Date().toISOString() },
   status: { type: String, enum: ['Open', 'In Progress', 'Response Provided', 'Under Review', 'Resolved', 'Closed'], default: 'Open' },
   response: { type: String, default: '' },
+  attachment_file_name: { type: String },
+  attachment_file_path: { type: String },
   resolved_by_name: { type: String },
   resolved_date: { type: String }
 }, {

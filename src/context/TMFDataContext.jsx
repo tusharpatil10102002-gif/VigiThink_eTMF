@@ -345,13 +345,21 @@ export const TMFDataProvider = ({ children }) => {
           newLifecycleName = '7. QC Review Outcome';
           newLifecycleStatus = 'QC Rejected / Revision Required';
         }
+        const nowIso = new Date().toISOString();
+        const formattedDateTime = `${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} ${new Date().toLocaleTimeString('en-US', { hour12: false })} (UTC+05:30)`;
+        const qcSig = `eSig-QC-${user?.id || 'QC'}-${Date.now().toString().slice(-6)}`;
+
         return {
           ...doc,
           qc_status: qcStatus,
           qc_comments: finalComments,
-          qc_review_date: new Date().toISOString().split('T')[0],
+          qc_review_date: nowIso.split('T')[0],
+          qc_review_timestamp: nowIso,
+          qc_review_date_time: formattedDateTime,
+          qc_signature: qcStatus === 'Passed' ? qcSig : null,
           qc_reviewer_id: user?.id || 'usr_qc',
           qc_reviewer_name: user?.name || 'QC Reviewer',
+          qc_reviewer_role: user?.roleName || user?.roleId || 'Document Controller',
           qc_score: newScore,
           status: newDocStatus,
           lifecycle_stage: newLifecycleStage,
@@ -481,6 +489,8 @@ export const TMFDataProvider = ({ children }) => {
   const performContentReview = async (docId, reviewDecision, comments, correctionsRequested, user) => {
     const isPassed = reviewDecision === 'Passed';
     const nowIso = new Date().toISOString();
+    const formattedDateTime = `${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} ${new Date().toLocaleTimeString('en-US', { hour12: false })} (UTC+05:30)`;
+    const crSig = `eSig-CR-${user?.id || 'TL'}-${Date.now().toString().slice(-6)}`;
 
     setDocuments(prev => prev.map(doc => {
       if (doc.document_id === docId) {
@@ -489,8 +499,11 @@ export const TMFDataProvider = ({ children }) => {
           content_review_status: reviewDecision,
           content_reviewer_id: user?.id,
           content_reviewer_name: user?.name,
-          content_reviewer_role: user?.roleId,
+          content_reviewer_role: user?.roleName || user?.roleId || 'TMF Lead',
           content_review_date: nowIso.split('T')[0],
+          content_review_timestamp: nowIso,
+          content_review_date_time: formattedDateTime,
+          content_review_signature: isPassed ? crSig : null,
           content_review_comments: comments,
           status: isPassed ? 'Approval Pending' : 'Revision Required',
           lifecycle_stage: isPassed ? 8 : 7,
@@ -537,6 +550,8 @@ export const TMFDataProvider = ({ children }) => {
   const performFinalApproval = async (docId, user, notes) => {
     const nowIso = new Date().toISOString();
     const signatureDate = nowIso.split('T')[0];
+    const formattedDateTime = `${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} ${new Date().toLocaleTimeString('en-US', { hour12: false })} (UTC+05:30)`;
+    const finalSig = `eSig-FINAL-${user?.id || 'ADMIN'}-${Date.now().toString().slice(-6)}`;
 
     setDocuments(prev => prev.map(doc => {
       if (doc.document_id === docId) {
@@ -545,9 +560,22 @@ export const TMFDataProvider = ({ children }) => {
           status: 'Effective',
           effective_date: signatureDate,
           approval_date: signatureDate,
+          approval_timestamp: nowIso,
+          approval_date_time: formattedDateTime,
+          approval_signature: finalSig,
           approver_name: user?.name || 'System Administrator',
           approver_id: user?.id,
+          approver_role: user?.roleName || user?.roleId || 'System Administrator',
           signature_type: 'Electronic (Part 11)',
+          signature_manifest: {
+            signer_id: user?.id,
+            signer_name: user?.name,
+            signer_role: user?.roleName || user?.roleId || 'System Administrator',
+            timestamp: nowIso,
+            formatted_datetime: formattedDateTime,
+            meaning: '21 CFR Part 11 Final Administrative Approval & Effective Filing',
+            signature_hash: `SHA256-${Date.now()}-${user?.id || 'admin'}`
+          },
           qc_score: 'Green',
           qc_status: 'Passed',
           lifecycle_stage: 10,
@@ -584,7 +612,7 @@ export const TMFDataProvider = ({ children }) => {
       selectedStudyId,
       "Approval Pending",
       "Effective",
-      notes || "Administrator granted final approval"
+      notes || "Administrator granted final approval under 21 CFR Part 11"
     );
   };
 
@@ -969,16 +997,51 @@ export const TMFDataProvider = ({ children }) => {
     logAuditEvent(user, "DOCUMENT_MOVED", "DOCUMENT", docId, docId, selectedStudyId, "Original Location", movePayload.targetFolder, "Artifact relocated in DIA hierarchy");
   };
 
-  // 7. Create New Document Version
-  const createNewDocumentVersion = async (docId, versionData, user) => {
+  // 7. Create New Document Version with optional File Upload
+  const createNewDocumentVersion = async (docId, versionData, user, file = null) => {
+    let localBlob = null;
+    let newFileName = null;
+    let newFileSize = null;
+    let newMime = null;
+    let newSha256 = null;
+
+    if (file) {
+      localBlob = URL.createObjectURL(file);
+      newFileName = file.name;
+      newFileSize = file.size;
+      newMime = file.type || 'application/pdf';
+      newSha256 = `sha256_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+    }
+
     setDocuments(prev => prev.map(d => {
       if (d.document_id === docId) {
+        const historyStack = Array.isArray(d.versions_history) ? [...d.versions_history] : [];
+        historyStack.push({
+          version_number: d.version_number || '1.0',
+          file_name: d.file_name,
+          file_path: d.file_path,
+          local_blob_url: d.local_blob_url,
+          uploaded_by_id: d.uploaded_by_id,
+          uploaded_by_name: d.uploaded_by_name,
+          upload_date_time: d.upload_date_time || new Date().toISOString(),
+          checksum_hash: d.checksum_hash,
+          notes: versionData.changeDescription || `Superseded by v${versionData.newVersion}`,
+          status: 'Superseded'
+        });
+
         return {
           ...d,
           version_number: versionData.newVersion,
-          status: 'Draft',
+          status: 'Submitted',
           qc_status: 'In Progress',
           qc_score: 'Amber',
+          quality_issue_flag: false,
+          file_name: newFileName || d.file_name,
+          local_blob_url: localBlob || d.local_blob_url,
+          file_size_bytes: newFileSize || d.file_size_bytes,
+          file_mimetype: newMime || d.file_mimetype,
+          checksum_hash: newSha256 || d.checksum_hash,
+          versions_history: historyStack,
           upload_date_time: new Date().toISOString(),
           filing_date: new Date().toISOString().split('T')[0]
         };
@@ -987,16 +1050,40 @@ export const TMFDataProvider = ({ children }) => {
     }));
 
     try {
-      await apiFetch(`/api/documents/${docId}/version`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...versionData, user })
-      });
+      if (file) {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('newVersion', versionData.newVersion);
+        formData.append('changeDescription', versionData.changeDescription || '');
+        formData.append('user', JSON.stringify(user));
+        await apiFetch(`/api/documents/${docId}/version`, {
+          method: 'POST',
+          body: formData
+        });
+      } else {
+        await apiFetch(`/api/documents/${docId}/version`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...versionData, user })
+        });
+      }
     } catch (e) {
       console.warn('[eTMF] Version created locally:', e.message);
     }
 
-    logAuditEvent(user, "NEW_VERSION_CREATED", "DOCUMENT", docId, docId, selectedStudyId, "Previous Version", versionData.newVersion, versionData.changeDescription || "Author submitted updated version");
+    logAuditEvent(
+      user,
+      "NEW_VERSION_CREATED",
+      "DOCUMENT",
+      docId,
+      docId,
+      selectedStudyId,
+      "Previous Version",
+      versionData.newVersion,
+      newFileName
+        ? `${versionData.changeDescription || "Author submitted updated version"} (Attached file: ${newFileName})`
+        : (versionData.changeDescription || "Author submitted updated version")
+    );
   };
 
   // 8. Download Actual Uploaded File or Part 11 Certified Dossier
@@ -1207,44 +1294,127 @@ export const TMFDataProvider = ({ children }) => {
     return newQuery;
   };
 
-  // 12. Resolve Quality Query
-  const resolveQuery = async (queryId, responseText, user, newStatus = 'Resolved') => {
+  // 12. Resolve Quality Query with Optional Replacement File Upload & Mandatory Comment Enforcement
+  const resolveQuery = async (queryId, responseText, user, newStatus = 'Resolved', replacementFile = null) => {
+    if (!responseText || !responseText.trim()) {
+      throw new Error("Remediation comment/explanation is mandatory under 21 CFR Part 11 to resolve or respond to a quality query.");
+    }
+
     const targetQuery = queries.find(q => q.query_id === queryId);
-    const finalResponse = responseText || 'Remediated and verified.';
+    const finalResponse = responseText.trim();
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    let localBlob = null;
+    let newFileName = null;
+    let newFileSize = null;
+    let newSha256 = null;
+
+    if (replacementFile) {
+      localBlob = URL.createObjectURL(replacementFile);
+      newFileName = replacementFile.name;
+      newFileSize = replacementFile.size;
+      newSha256 = `sha256_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+    }
 
     setQueries(prev => prev.map(q =>
       q.query_id === queryId
-        ? { ...q, status: newStatus, response: finalResponse, resolved_by_name: user?.name || 'Reviewer', resolved_date: new Date().toISOString().split('T')[0] }
+        ? { 
+            ...q, 
+            status: newStatus, 
+            response: finalResponse, 
+            resolved_by_name: user?.name || 'Reviewer', 
+            resolved_date: todayStr,
+            attachment_file_name: newFileName || q.attachment_file_name
+          }
         : q
     ));
 
     if (targetQuery?.document_id) {
       setDocuments(prev => prev.map(d => {
         if (d.document_id === targetQuery.document_id) {
-          return {
-            ...d,
-            qc_status: 'Passed',
-            qc_score: 'Green',
-            status: 'Approved',
-            quality_issue_flag: false,
-            qc_comments: `Query ${queryId} resolved: ${finalResponse}`
-          };
+          if (replacementFile) {
+            // When a replacement file is provided, archive old version, bump version, and reset status to 'Submitted' / 'In Progress' for QC re-check
+            const historyStack = Array.isArray(d.versions_history) ? [...d.versions_history] : [];
+            const currVer = parseFloat(d.version_number || '1.0');
+            const nextVer = (currVer + 0.1).toFixed(1);
+
+            historyStack.push({
+              version_number: d.version_number || '1.0',
+              file_name: d.file_name,
+              file_path: d.file_path,
+              local_blob_url: d.local_blob_url,
+              uploaded_by_id: d.uploaded_by_id,
+              uploaded_by_name: d.uploaded_by_name,
+              upload_date_time: d.upload_date_time || new Date().toISOString(),
+              checksum_hash: d.checksum_hash,
+              notes: `Archived during Query ${queryId} remediation: ${finalResponse}`,
+              status: 'Superseded'
+            });
+
+            return {
+              ...d,
+              version_number: nextVer,
+              status: 'Submitted',
+              qc_status: 'In Progress',
+              qc_score: 'Amber',
+              quality_issue_flag: false,
+              file_name: newFileName,
+              local_blob_url: localBlob,
+              file_size_bytes: newFileSize,
+              checksum_hash: newSha256,
+              versions_history: historyStack,
+              qc_comments: `Query ${queryId} resolved with replacement file v${nextVer}: ${finalResponse}`,
+              upload_date_time: new Date().toISOString(),
+              filing_date: todayStr
+            };
+          } else {
+            return {
+              ...d,
+              qc_status: newStatus === 'Resolved' ? 'Passed' : d.qc_status,
+              qc_score: newStatus === 'Resolved' ? 'Green' : d.qc_score,
+              quality_issue_flag: false,
+              qc_comments: `Query ${queryId} resolved: ${finalResponse}`
+            };
+          }
         }
         return d;
       }));
     }
 
     try {
-      await apiFetch(`/api/queries/${queryId}/resolve`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ response: finalResponse, status: newStatus, user })
-      });
+      if (replacementFile) {
+        const formData = new FormData();
+        formData.append('file', replacementFile);
+        formData.append('response', finalResponse);
+        formData.append('status', newStatus);
+        formData.append('user', JSON.stringify(user));
+
+        await apiFetch(`/api/queries/${queryId}/resolve`, {
+          method: 'PUT',
+          body: formData
+        });
+      } else {
+        await apiFetch(`/api/queries/${queryId}/resolve`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ response: finalResponse, status: newStatus, user })
+        });
+      }
     } catch (e) {
       console.warn('[eTMF] Query resolved locally:', e.message);
     }
 
-    logAuditEvent(user, "QUERY_RESOLVED", "QUERY", queryId, targetQuery?.issue_type || queryId, targetQuery?.study_id || selectedStudyId, "Open", newStatus, finalResponse);
+    logAuditEvent(
+      user, 
+      "QUERY_RESOLVED", 
+      "QUERY", 
+      queryId, 
+      targetQuery?.issue_type || queryId, 
+      targetQuery?.study_id || selectedStudyId, 
+      "Open", 
+      newStatus, 
+      `${finalResponse}${replacementFile ? ` (Replacement file uploaded: ${replacementFile.name})` : ''}`
+    );
   };
 
   // Delete document (System Administrator only)

@@ -28,7 +28,8 @@ export default function NewVersionModal({ doc, onClose, onVersionCreated }) {
         newVersion: nextVer,
         changeDescription
       },
-      currentUser
+      currentUser,
+      selectedFile
     );
 
     setSubmitting(false);

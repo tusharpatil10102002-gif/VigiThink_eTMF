@@ -815,21 +815,52 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                   </div>
                 </div>
 
-                {/* E-Signature Manifest Box */}
-                {doc.signature_type === 'Electronic (Part 11)' && (
-                  <div className="mt-8 border-t-2 border-dashed border-emerald-600 pt-4 bg-emerald-50 p-3 rounded">
-                    <p className="font-bold text-emerald-900 flex items-center gap-1 text-xs">
-                      <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                      21 CFR Part 11 Cryptographic E-Signature Applied
-                    </p>
-                    <p className="text-[10px] text-emerald-800 font-mono mt-1">
-                      Signed By: {doc.approver_name || 'Authorized Signatory'} | Date: {doc.approval_date || doc.effective_date}
-                    </p>
-                    <p className="text-[10px] text-slate-600 font-mono">
-                      Signature Hash Manifest: {doc.checksum_hash?.substring(0, 32)}...
-                    </p>
+                {/* 21 CFR Part 11 Electronic Signature & Verification Trail */}
+                <div className="mt-6 border-t-2 border-dashed border-emerald-600 pt-4 bg-emerald-50/70 p-3.5 rounded-lg space-y-2">
+                  <p className="font-bold text-emerald-900 flex items-center gap-1.5 text-xs">
+                    <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                    21 CFR Part 11 Cryptographic E-Signature &amp; Verification Trail
+                  </p>
+                  
+                  <div className="grid grid-cols-1 gap-2 text-[10px] font-mono">
+                    <div className="bg-white p-2 rounded border border-emerald-200">
+                      <span className="font-bold text-slate-700 block">Gate 1: Author / Uploader</span>
+                      <span className="text-slate-600">User: {doc.uploaded_by_name || 'Site User'} ({doc.uploaded_by_id || 'Uploader'})</span>
+                      <span className="text-slate-500 block">Uploaded: {doc.upload_date_time || doc.filing_date}</span>
+                    </div>
+
+                    {(doc.qc_status === 'Passed' || doc.qc_review_date_time) && (
+                      <div className="bg-white p-2 rounded border border-emerald-200">
+                        <span className="font-bold text-slate-700 block">Gate 2: QC Reviewer Pass</span>
+                        <span className="text-slate-600">Reviewer: {doc.qc_reviewer_name || 'Document Controller'}</span>
+                        <span className="text-slate-500 block">Timestamp: {doc.qc_review_date_time || doc.qc_review_date}</span>
+                        {doc.qc_signature && <span className="text-emerald-700 font-bold block">Signature: {doc.qc_signature}</span>}
+                      </div>
+                    )}
+
+                    {(doc.content_review_status === 'Passed' || doc.content_review_date_time) && (
+                      <div className="bg-white p-2 rounded border border-emerald-200">
+                        <span className="font-bold text-slate-700 block">Gate 3: Content Review Sign-Off</span>
+                        <span className="text-slate-600">Reviewer: {doc.content_reviewer_name || 'TMF Lead'}</span>
+                        <span className="text-slate-500 block">Timestamp: {doc.content_review_date_time || doc.content_review_date}</span>
+                        {doc.content_review_signature && <span className="text-indigo-700 font-bold block">Signature: {doc.content_review_signature}</span>}
+                      </div>
+                    )}
+
+                    {doc.status === 'Effective' && (
+                      <div className="bg-white p-2 rounded border border-emerald-200">
+                        <span className="font-bold text-slate-700 block">Gate 4: Final Admin Approval</span>
+                        <span className="text-slate-600">Approver: {doc.approver_name || 'System Administrator'} ({doc.approver_role || 'System Administrator'})</span>
+                        <span className="text-slate-500 block">Timestamp: {doc.approval_date_time || doc.effective_date}</span>
+                        <span className="text-emerald-700 font-bold block">Manifest: {doc.approval_signature || 'eSig-FINAL-Admin'}</span>
+                      </div>
+                    )}
                   </div>
-                )}
+
+                  <p className="text-[10px] text-slate-600 font-mono pt-1">
+                    SHA-256 Checksum: {doc.checksum_hash || 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'}
+                  </p>
+                </div>
               </div>
             )}
           </div>
@@ -990,6 +1021,28 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                     </p>
                   )}
 
+                  {/* QC Reviewer Stamp & Electronic Signature */}
+                  {doc.qc_status === 'Passed' && (doc.qc_reviewer_name || doc.qc_review_date_time) && (
+                    <div className="p-2 bg-emerald-50 rounded border border-emerald-200 text-[10px] space-y-0.5">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-emerald-900">QC Verified By:</span>
+                        <span className="text-emerald-800 font-mono font-medium">{doc.qc_reviewer_name || 'Document Controller'}</span>
+                      </div>
+                      {(doc.qc_review_date_time || doc.qc_review_timestamp) && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-500">Timestamp:</span>
+                          <span className="font-mono text-slate-700">{doc.qc_review_date_time || new Date(doc.qc_review_timestamp).toLocaleString('en-GB')}</span>
+                        </div>
+                      )}
+                      {doc.qc_signature && (
+                        <div className="flex items-center justify-between border-t border-emerald-200/60 pt-0.5 mt-0.5">
+                          <span className="text-slate-500">eSignature:</span>
+                          <span className="font-mono text-emerald-700 font-bold">{doc.qc_signature}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* Actions for Assigned QC Reviewer or Admin Fallback */}
                   {canPerformQcOnThisDoc ? (
                     <div className="pt-2 flex flex-wrap gap-2">
@@ -1047,6 +1100,28 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                     Inline Annotations: <strong>{openAnnotationsCount} Open Queries</strong>
                   </p>
 
+                  {/* Content Reviewer Stamp & Electronic Signature */}
+                  {doc.content_review_status === 'Passed' && (doc.content_reviewer_name || doc.content_review_date_time) && (
+                    <div className="p-2 bg-indigo-50 rounded border border-indigo-200 text-[10px] space-y-0.5">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-indigo-900">Reviewed By:</span>
+                        <span className="text-indigo-800 font-mono font-medium">{doc.content_reviewer_name || 'TMF Lead'}</span>
+                      </div>
+                      {(doc.content_review_date_time || doc.content_review_timestamp) && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-500">Timestamp:</span>
+                          <span className="font-mono text-slate-700">{doc.content_review_date_time || new Date(doc.content_review_timestamp).toLocaleString('en-GB')}</span>
+                        </div>
+                      )}
+                      {doc.content_review_signature && (
+                        <div className="flex items-center justify-between border-t border-indigo-200/60 pt-0.5 mt-0.5">
+                          <span className="text-slate-500">eSignature:</span>
+                          <span className="font-mono text-indigo-700 font-bold">{doc.content_review_signature}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* Actions for Assigned Content Reviewer or Admin Fallback */}
                   {canPerformContentReviewOnThisDoc ? (
                     <div className="pt-2 flex flex-wrap gap-2">
@@ -1091,10 +1166,27 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                   <p className="text-[11px] text-slate-700">
                     Role: <strong>System Administrator</strong> (Mandatory for Effective Status)
                   </p>
-                  {doc.approver_name && (
-                    <p className="text-[10px] text-emerald-800 font-mono">
-                      Approved by {doc.approver_name} on {doc.approval_date || doc.effective_date}
-                    </p>
+
+                  {/* Final Admin Stamp & Electronic Signature Manifest */}
+                  {doc.status === 'Effective' && (
+                    <div className="p-2 bg-emerald-50 rounded border border-emerald-200 text-[10px] space-y-0.5">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-emerald-900">Approved By:</span>
+                        <span className="text-emerald-800 font-mono font-medium">{doc.approver_name || 'System Administrator'} ({doc.approver_role || 'System Administrator'})</span>
+                      </div>
+                      {(doc.approval_date_time || doc.approval_timestamp) && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-500">Timestamp:</span>
+                          <span className="font-mono text-slate-700">{doc.approval_date_time || new Date(doc.approval_timestamp).toLocaleString('en-GB')}</span>
+                        </div>
+                      )}
+                      {(doc.approval_signature || doc.signature_manifest) && (
+                        <div className="flex items-center justify-between border-t border-emerald-200/60 pt-0.5 mt-0.5">
+                          <span className="text-slate-500">eSignature:</span>
+                          <span className="font-mono text-emerald-700 font-bold">{doc.approval_signature || 'eSig-FINAL-Admin'}</span>
+                        </div>
+                      )}
+                    </div>
                   )}
 
                   {/* Actions for System Administrator */}

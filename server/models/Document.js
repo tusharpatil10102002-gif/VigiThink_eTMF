@@ -84,6 +84,9 @@ const DocumentSchema = new mongoose.Schema({
   qc_reviewer_id: { type: String },
   qc_reviewer_name: { type: String },
   qc_review_date: { type: String },
+  qc_review_timestamp: { type: String },
+  qc_review_date_time: { type: String },
+  qc_signature: { type: String },
   quality_issue_flag: { type: Boolean, default: false },
   quality_issue_type: { type: String },
 
@@ -93,6 +96,9 @@ const DocumentSchema = new mongoose.Schema({
   content_reviewer_name: { type: String },
   content_reviewer_role: { type: String },
   content_review_date: { type: String },
+  content_review_timestamp: { type: String },
+  content_review_date_time: { type: String },
+  content_review_signature: { type: String },
   content_review_comments: { type: String },
 
   // Rejection & Remediation Lifecycle (ICH GCP E6 / 21 CFR Part 11)
@@ -122,8 +128,14 @@ const DocumentSchema = new mongoose.Schema({
   
   // 21 CFR Part 11 Electronic Signature Manifest
   signature_type: { type: String, default: 'None' },
+  approver_id: { type: String },
   approver_name: { type: String },
+  approver_role: { type: String },
   approval_date: { type: String },
+  approval_timestamp: { type: String },
+  approval_date_time: { type: String },
+  approval_signature: { type: String },
+  signature_manifest: { type: Object },
   checksum_hash: { type: String, default: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' },
   
   // Concurrency & Locking
