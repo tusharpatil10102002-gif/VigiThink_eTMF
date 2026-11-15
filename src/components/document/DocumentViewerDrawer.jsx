@@ -44,6 +44,7 @@ import {
 } from 'lucide-react';
 import { useTMFData } from '../../context/TMFDataContext';
 import { useAuth } from '../../context/AuthContext';
+import { resolveApiUrl } from '../../utils/api';
 import ESignatureModal from './ESignatureModal';
 import NewVersionModal from './NewVersionModal';
 
@@ -246,7 +247,9 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
   } = useAuth();
 
   const doc = (documents || []).find(d => d.document_id === initialDoc?.document_id) || initialDoc;
-  const previewFileUrl = doc?.local_blob_url || doc?.file_path || null;
+  const previewFileUrl = doc?.local_blob_url 
+    ? doc.local_blob_url 
+    : (doc?.file_path ? resolveApiUrl(doc.file_path) : (doc?.document_id ? resolveApiUrl(`/api/documents/${doc.document_id}/download`) : null));
   const [viewerMode, setViewerMode] = useState(previewFileUrl ? 'actual_file' : 'certificate');
   const [activeTab, setActiveTab] = useState(defaultTab || "workflow");
   const [qcCommentsInput, setQcCommentsInput] = useState(doc?.qc_comments || "");

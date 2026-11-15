@@ -1099,10 +1099,12 @@ export const TMFDataProvider = ({ children }) => {
       return;
     }
 
-    const downloadUrl = resolveApiUrl(`/api/documents/${doc.document_id}/download`);
+    const downloadUrl = doc.file_path
+      ? resolveApiUrl(doc.file_path)
+      : resolveApiUrl(`/api/documents/${doc.document_id}/download`);
     const anchor = document.createElement('a');
     anchor.href = downloadUrl;
-    anchor.download = doc.file_name || `${doc.document_id}_Part11_Certified.txt`;
+    anchor.download = doc.file_name || `${doc.document_id}.pdf`;
     document.body.appendChild(anchor);
     anchor.click();
     document.body.removeChild(anchor);
