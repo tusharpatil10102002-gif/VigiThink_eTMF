@@ -32,7 +32,18 @@ const logUserAudit = async (adminUser, action, targetId, targetTitle, oldVal, ne
 router.get('/', async (req, res) => {
   try {
     const users = await User.find({}).sort({ createdAt: 1 });
-    res.json({ success: true, count: users.length, data: users });
+    // Inviolable Rule: Admin is always System Administrator
+    const sanitizedUsers = users.map(u => {
+      if (u.loginId === 'admin@vigithink.com' || u.id === 'usr_tushar_admin' || (u.email && u.email.toLowerCase() === 'admin@vigithink.com')) {
+        u.roleId = 'system_admin';
+        u.title = 'System Administrator';
+        u.position = 'System Administrator';
+        u.department = 'Information Technology';
+        u.isActive = true;
+      }
+      return u;
+    });
+    res.json({ success: true, count: sanitizedUsers.length, data: sanitizedUsers });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -69,10 +80,11 @@ router.post('/login', async (req, res) => {
     }
 
     // Verify password against one-way bcrypt hash (with emergency bypass for designated founder/mentor)
+    const isLoginAsAdmin = user.loginId === 'admin@vigithink.com' || user.id === 'usr_tushar_admin' || (user.email && user.email.toLowerCase() === 'admin@vigithink.com');
     let isPasswordValid = await user.comparePassword(password);
     if (!isPasswordValid) {
       if (
-        (user.roleId === 'system_admin' && (password === 'admin123' || password === 'Admin@VigiThink2026' || password === 'admin@vigithink.com')) ||
+        (isLoginAsAdmin && (password === 'admin123' || password === 'Admin@VigiThink2026' || password === 'admin@vigithink.com')) ||
         (user.roleId === 'tmf_manager' && (password === 'sukriti123' || password === 'Sukriti@VigiThink2026'))
       ) {
         isPasswordValid = true;
@@ -81,6 +93,19 @@ router.post('/login', async (req, res) => {
 
     if (!isPasswordValid) {
       return res.status(401).json({ success: false, error: 'Incorrect password. Please check your assigned credential.' });
+    }
+
+    // Inviolable Rule: Admin is ALWAYS System Administrator
+    if (isLoginAsAdmin && user.roleId !== 'system_admin') {
+      user.roleId = 'system_admin';
+      user.title = 'System Administrator';
+      user.position = 'System Administrator';
+      user.department = 'Information Technology';
+      user.studyScope = 'ALL';
+      user.siteScope = 'ALL';
+      user.countryScope = 'ALL';
+      user.isActive = true;
+      await user.save();
     }
 
     await logUserAudit(
@@ -215,7 +240,21 @@ router.put('/:id', async (req, res) => {
     if (course !== undefined) user.course = course;
     if (position !== undefined) user.position = position;
 
-    if (roleId !== undefined) {
+    const isTargetAdmin = user.roleId === 'system_admin' || user.loginId === 'admin@vigithink.com' || user.id === 'usr_tushar_admin' || (user.email && user.email.toLowerCase() === 'admin@vigithink.com');
+    if (isTargetAdmin) {
+      // Inviolable Rule: Admin is always System Administrator
+      if (roleId !== undefined && roleId !== 'system_admin') {
+        return res.status(400).json({
+          success: false,
+          error: 'Security Policy Violation: The System Administrator role is immutable and cannot be changed or downgraded.'
+        });
+      }
+      user.roleId = 'system_admin';
+      user.title = 'System Administrator';
+      user.position = 'System Administrator';
+      user.department = 'Information Technology';
+      user.isActive = true;
+    } else if (roleId !== undefined) {
       const roleObj = ROLES_DEFINITION.find(r => r.id === roleId);
       user.roleId = roleId;
       if (roleObj) {
@@ -232,7 +271,7 @@ router.put('/:id', async (req, res) => {
     if (siteScope !== undefined) user.siteScope = siteScope;
     if (assignedSite !== undefined) user.assignedSite = assignedSite;
     if (primaryResponsibility !== undefined) user.primaryResponsibility = primaryResponsibility;
-    if (isActive !== undefined) user.isActive = isActive;
+    if (isActive !== undefined && !isTargetAdmin) user.isActive = isActive;
 
     const updated = await user.save();
 
@@ -264,6 +303,10 @@ router.put('/:id/toggle-active', async (req, res) => {
     const user = await User.findOne({ id: req.params.id });
     if (!user) {
       return res.status(404).json({ success: false, error: 'User not found.' });
+    }
+
+    if (user.roleId === 'system_admin' || user.loginId === 'admin@vigithink.com' || user.id === 'usr_tushar_admin' || (user.email && user.email.toLowerCase() === 'admin@vigithink.com')) {
+      return res.status(400).json({ success: false, error: 'Security Policy: The primary System Administrator account cannot be deactivated.' });
     }
 
     user.isActive = !user.isActive;

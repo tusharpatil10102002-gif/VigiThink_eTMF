@@ -65,6 +65,10 @@ export default function UserRoleManagement() {
 
   // Inline Role Change Handler
   const handleInlineRoleChange = async (user, newRoleId) => {
+    if (user.roleId === 'system_admin' || user.loginId === 'admin@vigithink.com' || user.id === 'usr_tushar_admin') {
+      showToast('Security Violation: The System Administrator role is permanent and cannot be modified or downgraded.');
+      return;
+    }
     const roleObj = rolesList.find(r => r.id === newRoleId);
     const newSiteScope =
       newRoleId === 'cra' || newRoleId === 'site_user' || newRoleId === 'investigator'
@@ -119,7 +123,9 @@ export default function UserRoleManagement() {
   const handleEditSubmit = async (e) => {
     e.preventDefault();
     if (!editingUser) return;
-    const res = await updateUserCredential(editingUser.id, editingUser);
+    const isEditingAdmin = editingUser.roleId === 'system_admin' || editingUser.loginId === 'admin@vigithink.com' || editingUser.id === 'usr_tushar_admin';
+    const payload = isEditingAdmin ? { ...editingUser, roleId: 'system_admin', title: 'System Administrator', position: 'System Administrator' } : editingUser;
+    const res = await updateUserCredential(editingUser.id, payload);
     if (res.success) {
       showToast(`Updated credentials & access for ${editingUser.name}!`);
       setEditingUser(null);
@@ -337,14 +343,24 @@ export default function UserRoleManagement() {
 
                       {/* Column 3: Role Selector */}
                       <td className="p-3">
-                        {isAdminOrMentor ? (
+                        {u.roleId === 'system_admin' || u.loginId === 'admin@vigithink.com' || u.id === 'usr_tushar_admin' ? (
+                          <div className="space-y-1">
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-bold bg-purple-100 text-purple-900 border border-purple-300">
+                              <ShieldCheck className="w-3.5 h-3.5 text-purple-700" />
+                              System Administrator
+                            </span>
+                            <p className="text-[10px] text-purple-700 font-semibold flex items-center gap-1">
+                              <Lock className="w-2.5 h-2.5" /> Immutable Admin Role
+                            </p>
+                          </div>
+                        ) : isAdminOrMentor ? (
                           <div className="space-y-1">
                             <select
                               value={u.roleId}
                               onChange={(e) => handleInlineRoleChange(u, e.target.value)}
                               className="w-full bg-white border border-blue-300 rounded px-2.5 py-1.5 font-bold text-slate-900 focus:outline-none focus:border-blue-600 shadow-2xs cursor-pointer text-xs"
                             >
-                              {rolesList.map(r => (
+                              {rolesList.filter(r => r.id !== 'system_admin').map(r => (
                                 <option key={r.id} value={r.id}>
                                   {r.name}
                                 </option>
@@ -914,17 +930,34 @@ export default function UserRoleManagement() {
                 </div>
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">Assigned eTMF Role</label>
-                  <select
-                    value={editingUser.roleId}
-                    onChange={(e) => setEditingUser({ ...editingUser, roleId: e.target.value })}
-                    className="w-full border border-blue-400 rounded px-3 py-1.5 font-bold text-slate-900"
-                  >
-                    {rolesList.map(r => (
-                      <option key={r.id} value={r.id}>
-                        {r.name}
-                      </option>
-                    ))}
-                  </select>
+                  {editingUser.roleId === 'system_admin' || editingUser.loginId === 'admin@vigithink.com' || editingUser.id === 'usr_tushar_admin' ? (
+                    <div className="space-y-1">
+                      <div className="w-full bg-purple-50 border border-purple-300 rounded px-3 py-1.5 font-bold text-purple-900 flex items-center justify-between">
+                        <span className="flex items-center gap-1.5">
+                          <ShieldCheck className="w-4 h-4 text-purple-700" />
+                          System Administrator
+                        </span>
+                        <span className="text-[10px] bg-purple-200 text-purple-800 px-1.5 py-0.5 rounded font-mono font-bold flex items-center gap-1">
+                          <Lock className="w-3 h-3" /> Locked
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-purple-700 font-semibold">
+                        Administrator role is permanent and immutable.
+                      </p>
+                    </div>
+                  ) : (
+                    <select
+                      value={editingUser.roleId}
+                      onChange={(e) => setEditingUser({ ...editingUser, roleId: e.target.value })}
+                      className="w-full border border-blue-400 rounded px-3 py-1.5 font-bold text-slate-900"
+                    >
+                      {rolesList.filter(r => r.id !== 'system_admin').map(r => (
+                        <option key={r.id} value={r.id}>
+                          {r.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
               </div>
 

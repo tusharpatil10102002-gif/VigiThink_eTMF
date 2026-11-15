@@ -12,7 +12,19 @@ export const AuthProvider = ({ children }) => {
       const saved = localStorage.getItem('vigithink_current_user');
       if (saved) {
         const u = JSON.parse(saved);
-        if (u && (u.id || u.roleId)) return u;
+        if (u && (u.id || u.roleId)) {
+          // Inviolable Rule: Admin is ALWAYS System Administrator
+          if (
+            (u.loginId && u.loginId.toLowerCase() === 'admin@vigithink.com') ||
+            (u.email && u.email.toLowerCase() === 'admin@vigithink.com') ||
+            u.id === 'usr_tushar_admin'
+          ) {
+            u.roleId = 'system_admin';
+            u.title = 'System Administrator';
+            u.position = 'System Administrator';
+          }
+          return u;
+        }
       }
     } catch (e) {}
     return null;
@@ -59,12 +71,20 @@ export const AuthProvider = ({ children }) => {
       if (res.ok) {
         const json = await res.json();
         if (json.success && Array.isArray(json.data) && json.data.length > 0) {
-          setUsersList(json.data);
+          // Inviolable Rule: Admin is ALWAYS System Administrator
+          const sanitized = json.data.map(u => {
+            if (u.loginId === 'admin@vigithink.com' || u.id === 'usr_tushar_admin' || (u.email && u.email.toLowerCase() === 'admin@vigithink.com')) {
+              return { ...u, roleId: 'system_admin', title: 'System Administrator', position: 'System Administrator', department: 'Information Technology' };
+            }
+            return u;
+          });
+          setUsersList(sanitized);
           // Sync currentUser if updated in DB
           const currentId = currentUser?.id || currentUser?.loginId;
-          const syncedCurrent = json.data.find(u => u.id === currentId || u.loginId === currentId);
+          const syncedCurrent = sanitized.find(u => u.id === currentId || u.loginId === currentId);
           if (syncedCurrent) {
-            setCurrentUser(syncedCurrent);
+            const isAdmin = syncedCurrent.loginId === 'admin@vigithink.com' || syncedCurrent.id === 'usr_tushar_admin';
+            setCurrentUser(isAdmin ? { ...syncedCurrent, roleId: 'system_admin' } : syncedCurrent);
           }
         }
       }
@@ -81,15 +101,26 @@ export const AuthProvider = ({ children }) => {
   const currentRole = ROLES_DEFINITION.find(r => r.id === activeRoleId) || ROLES_DEFINITION[0];
 
   const applyUserLogin = (u) => {
-    setCurrentUser(u);
-    setActiveRoleId(u.roleId);
-    setSelectedStudyScope(u.studyScope || 'CLIN-001');
-    setSelectedCountryScope(u.countryScope || 'India');
-    setSelectedSiteScope(u.siteScope || 'ALL');
-    setIsInspectorMode(u.roleId === 'auditor');
+    // Inviolable Rule: Admin is ALWAYS System Administrator
+    const isAdminAccount = Boolean(
+      (u?.loginId && u.loginId.toLowerCase() === 'admin@vigithink.com') ||
+      (u?.email && u.email.toLowerCase() === 'admin@vigithink.com') ||
+      (u?.id === 'usr_tushar_admin')
+    );
+
+    const safeUser = isAdminAccount
+      ? { ...u, roleId: 'system_admin', title: 'System Administrator', position: 'System Administrator', department: 'Information Technology' }
+      : u;
+
+    setCurrentUser(safeUser);
+    setActiveRoleId(safeUser.roleId);
+    setSelectedStudyScope(safeUser.studyScope || 'ALL');
+    setSelectedCountryScope(safeUser.countryScope || 'India');
+    setSelectedSiteScope(safeUser.siteScope || 'ALL');
+    setIsInspectorMode(safeUser.roleId === 'auditor');
     setIsAuthenticated(true);
     try {
-      localStorage.setItem('vigithink_current_user', JSON.stringify(u));
+      localStorage.setItem('vigithink_current_user', JSON.stringify(safeUser));
       localStorage.setItem('vigithink_is_authenticated', 'true');
     } catch (e) {}
   };
@@ -201,22 +232,29 @@ export const AuthProvider = ({ children }) => {
   // Admin: Update user role, scope, or credential details
   const updateUserCredential = async (userId, updatedFields) => {
     try {
+      const isTargetAdmin = userId === 'usr_tushar_admin' || updatedFields?.loginId === 'admin@vigithink.com' || updatedFields?.email === 'admin@vigithink.com';
+      const safeFields = isTargetAdmin
+        ? { ...updatedFields, roleId: 'system_admin', title: 'System Administrator', position: 'System Administrator' }
+        : updatedFields;
+
       const res = await apiFetch(`/api/users/${userId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...updatedFields, adminUser: currentUser })
+        body: JSON.stringify({ ...safeFields, adminUser: currentUser })
       });
       const json = await res.json();
       if (json.success && json.data) {
-        setUsersList(prev => prev.map(u => (u.id === userId ? json.data : u)));
-        if (currentUser.id === userId) {
-          setCurrentUser(json.data);
-          setActiveRoleId(json.data.roleId);
-          setSelectedStudyScope(json.data.studyScope);
-          setSelectedCountryScope(json.data.countryScope);
-          setSelectedSiteScope(json.data.siteScope);
+        const savedData = isTargetAdmin ? { ...json.data, roleId: 'system_admin', title: 'System Administrator' } : json.data;
+        setUsersList(prev => prev.map(u => (u.id === userId ? savedData : u)));
+        if (currentUser.id === userId || isTargetAdmin) {
+          const finalUser = isTargetAdmin ? { ...savedData, roleId: 'system_admin' } : savedData;
+          setCurrentUser(finalUser);
+          setActiveRoleId(finalUser.roleId);
+          setSelectedStudyScope(finalUser.studyScope);
+          setSelectedCountryScope(finalUser.countryScope);
+          setSelectedSiteScope(finalUser.siteScope);
         }
-        return { success: true, data: json.data };
+        return { success: true, data: savedData };
       }
       return { success: false, error: json.error || 'Failed to update user' };
     } catch (err) {

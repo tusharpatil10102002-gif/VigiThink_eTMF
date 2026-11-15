@@ -27,8 +27,8 @@ import logoImg from '../../assets/vigithink_logo.png';
 export default function Header({ toggleSidebar, isSidebarOpen = true }) {
   const navigate = useNavigate();
   const { currentUser, currentRole, logout, demoUsers, switchRole, switchUserPersona, hasPermission } = useAuth();
-  const isSystemAdmin = currentUser?.roleId === 'system_admin' || currentUser?.role === 'system_admin';
-  const canSwitchPersona = isSystemAdmin || currentUser?.roleId === 'tmf_manager' || currentUser?.role === 'tmf_manager';
+  const isSystemAdmin = currentUser?.roleId === 'system_admin' || currentUser?.role === 'system_admin' || currentUser?.loginId === 'admin@vigithink.com';
+  const canSwitchPersona = isSystemAdmin || currentUser?.roleId === 'tmf_manager' || currentUser?.role === 'tmf_manager' || Boolean(typeof window !== 'undefined' && window.sessionStorage?.getItem('vigithink_original_admin'));
   const { 
     searchQuery, 
     setSearchQuery, 
@@ -238,7 +238,20 @@ export default function Header({ toggleSidebar, isSidebarOpen = true }) {
                   <div className="space-y-1 pt-1 border-t border-slate-100">
                     <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Switch Role Workspace:</p>
                     <div className="max-h-36 overflow-y-auto space-y-0.5">
-                      {(demoUsers || []).filter(u => u.id !== currentUser.id).map(u => (
+                      {currentUser?.roleId !== 'system_admin' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            switchUserPersona('system_admin');
+                            setShowRoleSelector(false);
+                          }}
+                          className="w-full text-left px-2 py-1 bg-purple-50 hover:bg-purple-100 text-purple-900 rounded text-[11px] font-bold flex items-center justify-between cursor-pointer mb-1 border border-purple-200"
+                        >
+                          <span className="flex items-center gap-1">👑 Tushar Patil</span>
+                          <span className="text-[9px] bg-purple-200 text-purple-900 px-1.5 py-0.2 rounded font-mono">system_admin</span>
+                        </button>
+                      )}
+                      {(demoUsers || []).filter(u => u.id !== currentUser.id && u.roleId !== 'system_admin').map(u => (
                         <button
                           key={u.id}
                           type="button"
