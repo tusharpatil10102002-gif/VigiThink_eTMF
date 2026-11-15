@@ -9,8 +9,34 @@ export default function TaskInbox() {
   const { currentUser, currentRole } = useAuth();
   const [selectedDoc, setSelectedDoc] = useState(null);
 
-  // Filter tasks relevant to active user persona role
-  const tasks = documents.filter(d => d.study_id === selectedStudyId && d.status !== 'Effective');
+  const isAdmin = Boolean(
+    currentUser?.roleId === 'system_admin' || 
+    currentRole?.id === 'system_admin' || 
+    currentUser?.id === 'admin' ||
+    currentUser?.email === 'admin@vigithink.com'
+  );
+
+  // Filter tasks strictly assigned to active user (or Admin fallback / author rework)
+  const tasks = documents.filter(d => {
+    if (d.study_id && selectedStudyId && d.study_id !== selectedStudyId) return false;
+    if (d.status === 'Effective' || d.status === 'Archived') return false;
+
+    if (isAdmin) return true;
+
+    const isAssigned = Boolean(
+      (d.assigned_reviewer_id && d.assigned_reviewer_id === currentUser?.id) ||
+      (d.assigned_reviewer_name && currentUser?.name && d.assigned_reviewer_name.trim().toLowerCase().includes(currentUser.name.trim().toLowerCase())) ||
+      (d.qc_reviewer_id && d.qc_reviewer_id === currentUser?.id) ||
+      (d.content_reviewer_id && d.content_reviewer_id === currentUser?.id)
+    );
+
+    const isUploaderRework = Boolean(
+      (d.uploaded_by_id === currentUser?.id || d.submitted_by_id === currentUser?.id) &&
+      (d.status === 'Revision Required' || d.status === 'QC Rejected' || d.qc_status === 'Failed' || d.qc_status === 'Query Raised')
+    );
+
+    return isAssigned || isUploaderRework;
+  });
 
   return (
     <div className="p-6 space-y-6 bg-slate-50 min-h-full">
@@ -45,35 +71,44 @@ export default function TaskInbox() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-sans">
-              {tasks.map(d => (
-                <tr key={d.document_id} className="hover:bg-slate-50 cursor-pointer" onClick={() => setSelectedDoc(d)}>
-                  <td className="p-3">
-                    <p className="font-bold text-slate-900">Review &amp; Approve Document</p>
-                    <p className="text-[10px] text-slate-500 font-mono">SOP Gate #03: Approval Stage</p>
-                  </td>
-                  <td className="p-3">
-                    <div className="flex items-center gap-2">
-                      <FileText className="w-4 h-4 text-blue-600 shrink-0" />
-                      <div>
-                        <p className="font-semibold text-slate-800">{d.document_title}</p>
-                        <p className="text-[10px] text-slate-400 font-mono">{d.document_id} (v{d.version_number})</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="p-3 font-mono text-blue-700 font-bold">{currentRole.name}</td>
-                  <td className="p-3 font-mono text-amber-700 font-bold">2026-08-20 (In 4 Days)</td>
-                  <td className="p-3">
-                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
-                      {d.status}
-                    </span>
-                  </td>
-                  <td className="p-3 text-right">
-                    <button className="px-3 py-1 rounded bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-1 ml-auto shadow-xs">
-                      Execute Workflow <ArrowRight className="w-3 h-3" />
-                    </button>
+              {tasks.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="p-8 text-center text-slate-400 italic">
+                    <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-2 opacity-80" />
+                    No pending document tasks assigned to you. All assigned reviews and actions are fully up to date.
                   </td>
                 </tr>
-              ))}
+              ) : (
+                tasks.map(d => (
+                  <tr key={d.document_id} className="hover:bg-slate-50 cursor-pointer" onClick={() => setSelectedDoc(d)}>
+                    <td className="p-3">
+                      <p className="font-bold text-slate-900">Review &amp; Approve Document</p>
+                      <p className="text-[10px] text-slate-500 font-mono">SOP Gate #03: Approval Stage</p>
+                    </td>
+                    <td className="p-3">
+                      <div className="flex items-center gap-2">
+                        <FileText className="w-4 h-4 text-blue-600 shrink-0" />
+                        <div>
+                          <p className="font-semibold text-slate-800">{d.document_title}</p>
+                          <p className="text-[10px] text-slate-400 font-mono">{d.document_id} (v{d.version_number})</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="p-3 font-mono text-blue-700 font-bold">{currentRole.name}</td>
+                    <td className="p-3 font-mono text-amber-700 font-bold">2026-08-20 (In 4 Days)</td>
+                    <td className="p-3">
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                        {d.status}
+                      </span>
+                    </td>
+                    <td className="p-3 text-right">
+                      <button className="px-3 py-1 rounded bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-1 ml-auto shadow-xs">
+                        Execute Workflow <ArrowRight className="w-3 h-3" />
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

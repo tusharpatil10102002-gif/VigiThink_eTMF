@@ -405,7 +405,40 @@ export default function QcReviewQueue() {
                 </tr>
               ) : (
                 filteredDocs.map(d => {
-                  const isAssignedToMe = d.assigned_reviewer_id === currentUser?.id || d.assigned_reviewer_name === currentUser?.name;
+                  const isAssignedToMe = Boolean(
+                    (d.assigned_reviewer_id && currentUser?.id && d.assigned_reviewer_id === currentUser.id) ||
+                    (d.assigned_reviewer_name && currentUser?.name && d.assigned_reviewer_name.trim().toLowerCase().includes(currentUser.name.trim().toLowerCase())) ||
+                    (d.qc_reviewer_id && currentUser?.id && d.qc_reviewer_id === currentUser.id) ||
+                    (d.qc_reviewer_name && currentUser?.name && d.qc_reviewer_name.trim().toLowerCase().includes(currentUser.name.trim().toLowerCase()))
+                  );
+
+                  const isSelfUploaded = Boolean(
+                    (d.uploaded_by_id && currentUser?.id && d.uploaded_by_id === currentUser.id) ||
+                    (d.submitted_by_id && currentUser?.id && d.submitted_by_id === currentUser.id) ||
+                    (d.uploaded_by_name && currentUser?.name && d.uploaded_by_name.trim().toLowerCase() === currentUser.name.trim().toLowerCase()) ||
+                    (d.submitted_by_name && currentUser?.name && d.submitted_by_name.trim().toLowerCase() === currentUser.name.trim().toLowerCase())
+                  );
+
+                  const isAdmin = Boolean(
+                    currentUser?.roleId === 'system_admin' || 
+                    currentRole?.id === 'system_admin' || 
+                    currentUser?.id === 'admin' ||
+                    currentUser?.email === 'admin@vigithink.com'
+                  );
+
+                  const isDocController = Boolean(currentUser?.roleId === 'doc_controller' || currentRole?.id === 'doc_controller');
+
+                  const canActionQcOnThisDoc = Boolean(
+                    !isSelfUploaded &&
+                    d.qc_status !== 'Passed' &&
+                    d.status !== 'Effective' &&
+                    (
+                      isAdmin ||
+                      (isAssignedToMe && (canQcPass || canQcReject)) ||
+                      (isDocController && (!d.assigned_reviewer_id || d.assigned_reviewer_role === 'doc_controller'))
+                    )
+                  );
+
                   return (
                     <tr key={d.document_id} className={`hover:bg-slate-50/80 transition-colors ${isAssignedToMe ? 'bg-indigo-50/20' : ''}`}>
                       <td className="p-3.5">
@@ -420,6 +453,11 @@ export default function QcReviewQueue() {
                           {isAssignedToMe && (
                             <span className="px-1.5 py-0.2 bg-indigo-100 text-indigo-800 rounded text-[9px] font-bold">
                               Assigned to You
+                            </span>
+                          )}
+                          {isSelfUploaded && (
+                            <span className="px-1.5 py-0.2 bg-slate-100 text-slate-600 rounded text-[9px] font-mono">
+                              Your Upload
                             </span>
                           )}
                         </div>
@@ -470,8 +508,8 @@ export default function QcReviewQueue() {
                       </td>
                     <td className="p-3.5 text-right">
                       <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                        {/* QC Approver Buttons (QA, TMF Lead, CTM, Admin) */}
-                        {canQcPass && (
+                        {/* QC Approver Buttons - Strictly rendered ONLY if assigned or Admin fallback, and NOT self-uploaded */}
+                        {canActionQcOnThisDoc && canQcPass && (
                           <button
                             type="button"
                             onClick={() => handlePassQc(d)}
@@ -482,7 +520,7 @@ export default function QcReviewQueue() {
                           </button>
                         )}
 
-                        {canQcReject && (
+                        {canActionQcOnThisDoc && canQcReject && (
                           <>
                             <button
                               type="button"
@@ -511,7 +549,7 @@ export default function QcReviewQueue() {
                         )}
 
                         {/* Non-Approver (CRC, CRA) Resolve Query Action */}
-                        {!canQcPass && d.qc_status === 'Query Raised' && canUpload && (
+                        {!canActionQcOnThisDoc && isSelfUploaded && d.qc_status === 'Query Raised' && canUpload && (
                           <button
                             type="button"
                             onClick={() => {
@@ -530,9 +568,9 @@ export default function QcReviewQueue() {
                           type="button"
                           onClick={() => openChecklistForDoc(d)}
                           className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg font-semibold text-xs shadow-2xs cursor-pointer flex items-center gap-1 transition-colors"
-                          title={canQcPass ? "Open 14-Point SOP-TMF-04 Checklist" : "Inspect 14-Point Checklist (Read-Only)"}
+                          title={canActionQcOnThisDoc ? "Open 14-Point SOP-TMF-04 Checklist" : "Inspect 14-Point Checklist (Read-Only)"}
                         >
-                          <ClipboardList className="w-3.5 h-3.5" /> {canQcPass ? '14-Pt QC' : 'Checklist'}
+                          <ClipboardList className="w-3.5 h-3.5" /> {canActionQcOnThisDoc ? '14-Pt QC' : 'Checklist'}
                         </button>
 
                         {/* View File Button */}
@@ -786,65 +824,105 @@ export default function QcReviewQueue() {
             </div>
 
             {/* Modal Actions (Save QC Draft, Submit QC, Accept, Reject, Request Correction) */}
-            <div className="p-4 border-t border-slate-200 bg-slate-50 flex flex-wrap items-center justify-between gap-2">
-              <button
-                type="button"
-                onClick={() => setActiveChecklistDoc(null)}
-                className="px-3.5 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg font-semibold cursor-pointer"
-              >
-                Close
-              </button>
+            {(() => {
+              const isActiveDocAssignedToMe = Boolean(
+                activeChecklistDoc && (
+                  (activeChecklistDoc.assigned_reviewer_id && currentUser?.id && activeChecklistDoc.assigned_reviewer_id === currentUser.id) ||
+                  (activeChecklistDoc.assigned_reviewer_name && currentUser?.name && activeChecklistDoc.assigned_reviewer_name.trim().toLowerCase().includes(currentUser.name.trim().toLowerCase())) ||
+                  (activeChecklistDoc.qc_reviewer_id && currentUser?.id && activeChecklistDoc.qc_reviewer_id === currentUser.id) ||
+                  (activeChecklistDoc.qc_reviewer_name && currentUser?.name && activeChecklistDoc.qc_reviewer_name.trim().toLowerCase().includes(currentUser.name.trim().toLowerCase()))
+                )
+              );
 
-              {canQcPass || canQcReject ? (
-                <div className="flex items-center gap-2 flex-wrap">
+              const isActiveDocSelfUploaded = Boolean(
+                activeChecklistDoc && (
+                  (activeChecklistDoc.uploaded_by_id && currentUser?.id && activeChecklistDoc.uploaded_by_id === currentUser.id) ||
+                  (activeChecklistDoc.submitted_by_id && currentUser?.id && activeChecklistDoc.submitted_by_id === currentUser.id) ||
+                  (activeChecklistDoc.uploaded_by_name && currentUser?.name && activeChecklistDoc.uploaded_by_name.trim().toLowerCase() === currentUser.name.trim().toLowerCase()) ||
+                  (activeChecklistDoc.submitted_by_name && currentUser?.name && activeChecklistDoc.submitted_by_name.trim().toLowerCase() === currentUser.name.trim().toLowerCase())
+                )
+              );
+
+              const canActionActiveDocQc = Boolean(
+                activeChecklistDoc &&
+                !isActiveDocSelfUploaded &&
+                activeChecklistDoc.qc_status !== 'Passed' &&
+                activeChecklistDoc.status !== 'Effective' &&
+                (
+                  currentUser?.roleId === 'system_admin' || 
+                  currentRole?.id === 'system_admin' || 
+                  currentUser?.id === 'admin' ||
+                  (isActiveDocAssignedToMe && (canQcPass || canQcReject)) ||
+                  ((currentUser?.roleId === 'doc_controller' || currentRole?.id === 'doc_controller') && (!activeChecklistDoc.assigned_reviewer_id || activeChecklistDoc.assigned_reviewer_role === 'doc_controller'))
+                )
+              );
+
+              return (
+                <div className="p-4 border-t border-slate-200 bg-slate-50 flex flex-wrap items-center justify-between gap-2">
                   <button
                     type="button"
-                    onClick={() => {
-                      showSuccessBanner('blue', 'QC Draft state saved locally.');
-                      setActiveChecklistDoc(null);
-                    }}
-                    className="px-3.5 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-lg font-semibold shadow-2xs cursor-pointer"
+                    onClick={() => setActiveChecklistDoc(null)}
+                    className="px-3.5 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg font-semibold cursor-pointer"
                   >
-                    Save QC Draft
+                    Close
                   </button>
 
-                  {qcOutcome === 'Reject' && canQcReject && (
-                    <button
-                      type="button"
-                      onClick={() => handleExecuteQcDecision('Reject')}
-                      className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-bold shadow-2xs cursor-pointer flex items-center gap-1.5 transition-colors"
-                    >
-                      <XCircle className="w-4 h-4" /> Confirm Reject &amp; Return
-                    </button>
-                  )}
+                  {canActionActiveDocQc && (canQcPass || canQcReject) ? (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          showSuccessBanner('blue', 'QC Draft state saved locally.');
+                          setActiveChecklistDoc(null);
+                        }}
+                        className="px-3.5 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-lg font-semibold shadow-2xs cursor-pointer"
+                      >
+                        Save QC Draft
+                      </button>
 
-                  {qcOutcome === 'Request Correction' && canQcReject && (
-                    <button
-                      type="button"
-                      onClick={() => handleExecuteQcDecision('Request Correction')}
-                      className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-bold shadow-2xs cursor-pointer flex items-center gap-1.5 transition-colors"
-                    >
-                      <HelpCircle className="w-4 h-4" /> Request Correction
-                    </button>
-                  )}
+                      {qcOutcome === 'Reject' && canQcReject && (
+                        <button
+                          type="button"
+                          onClick={() => handleExecuteQcDecision('Reject')}
+                          className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-bold shadow-2xs cursor-pointer flex items-center gap-1.5 transition-colors"
+                        >
+                          <XCircle className="w-4 h-4" /> Confirm Reject &amp; Return
+                        </button>
+                      )}
 
-                  {qcOutcome === 'Accept' && canQcPass && (
-                    <button
-                      type="button"
-                      onClick={() => handleExecuteQcDecision('Accept')}
-                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold shadow-2xs cursor-pointer flex items-center gap-1.5 transition-colors"
-                    >
-                      <CheckCircle2 className="w-4 h-4" /> Accept &amp; Pass QC
-                    </button>
+                      {qcOutcome === 'Request Correction' && canQcReject && (
+                        <button
+                          type="button"
+                          onClick={() => handleExecuteQcDecision('Request Correction')}
+                          className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-bold shadow-2xs cursor-pointer flex items-center gap-1.5 transition-colors"
+                        >
+                          <HelpCircle className="w-4 h-4" /> Request Correction
+                        </button>
+                      )}
+
+                      {qcOutcome === 'Accept' && canQcPass && (
+                        <button
+                          type="button"
+                          onClick={() => handleExecuteQcDecision('Accept')}
+                          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold shadow-2xs cursor-pointer flex items-center gap-1.5 transition-colors"
+                        >
+                          <CheckCircle2 className="w-4 h-4" /> Accept &amp; Pass QC
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 text-slate-600 text-[11px] bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200">
+                      <Lock className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                      <span>
+                        {isActiveDocSelfUploaded
+                          ? 'Maker-Checker rule: Document author cannot QC their own uploaded document.'
+                          : `QC Review actions restricted to assigned QC Reviewer (${activeChecklistDoc?.assigned_reviewer_name || 'Assigned Reviewer'}) or System Administrator.`}
+                      </span>
+                    </div>
                   )}
                 </div>
-              ) : (
-                <div className="flex items-center gap-2 text-slate-600 text-[11px] bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200">
-                  <Lock className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                  <span>QC Review actions restricted to Quality Assurance (QA) and TMF Management.</span>
-                </div>
-              )}
-            </div>
+              );
+            })()}
 
           </div>
         </div>

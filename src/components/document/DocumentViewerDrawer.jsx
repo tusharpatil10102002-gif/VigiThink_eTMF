@@ -200,13 +200,81 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
     currentUser?.email === 'admin@vigithink.com'
   );
 
-  const isDocController = Boolean(currentUser?.roleId === 'doc_controller' || currentRole?.id === 'doc_controller' || isAdmin);
+  // Is this document assigned to the logged-in user?
+  const isAssignedReviewer = Boolean(
+    (doc.assigned_reviewer_id && currentUser?.id && doc.assigned_reviewer_id === currentUser.id) ||
+    (doc.assigned_reviewer_name && currentUser?.name && doc.assigned_reviewer_name.trim().toLowerCase().includes(currentUser.name.trim().toLowerCase())) ||
+    (doc.qc_reviewer_id && currentUser?.id && doc.qc_reviewer_id === currentUser.id) ||
+    (doc.qc_reviewer_name && currentUser?.name && doc.qc_reviewer_name.trim().toLowerCase().includes(currentUser.name.trim().toLowerCase())) ||
+    (doc.content_reviewer_id && currentUser?.id && doc.content_reviewer_id === currentUser.id) ||
+    (doc.content_reviewer_name && currentUser?.name && doc.content_reviewer_name.trim().toLowerCase().includes(currentUser.name.trim().toLowerCase()))
+  );
+
+  const isDocController = Boolean(currentUser?.roleId === 'doc_controller' || currentRole?.id === 'doc_controller');
   const isTmfLeadOrReviewer = Boolean(
     currentUser?.roleId === 'tmf_manager' || 
     currentRole?.id === 'tmf_manager' || 
     currentUser?.roleId === 'cra' || 
-    currentRole?.id === 'cra' || 
-    isAdmin
+    currentRole?.id === 'cra'
+  );
+
+  // Strict Action Isolation:
+  // Gate 2 (QC Review Actions): Only assigned QC reviewer or Admin, and never the uploader
+  const canPerformQcOnThisDoc = Boolean(
+    !isSelfUploaded &&
+    doc.qc_status !== 'Passed' &&
+    doc.status !== 'Effective' &&
+    (
+      isAdmin ||
+      (isAssignedReviewer && (isDocController || isTmfLeadOrReviewer)) ||
+      (isDocController && (!doc.assigned_reviewer_id || doc.assigned_reviewer_role === 'doc_controller'))
+    )
+  );
+
+  // Gate 3 (Content Review Actions): Only assigned content reviewer or Admin, and never the uploader
+  const canPerformContentReviewOnThisDoc = Boolean(
+    !isSelfUploaded &&
+    (doc.qc_status === 'Passed' || doc.status === 'QC Passed') &&
+    doc.status !== 'Effective' &&
+    (
+      isAdmin ||
+      (isAssignedReviewer && isTmfLeadOrReviewer) ||
+      (isTmfLeadOrReviewer && (!doc.assigned_reviewer_id || doc.assigned_reviewer_role === 'tmf_manager' || doc.assigned_reviewer_role === 'cra'))
+    )
+  );
+
+  // Gate 4 (Final Approval): Strictly restricted to System Administrator
+  const canPerformFinalApprovalOnThisDoc = Boolean(
+    isAdmin &&
+    !isSelfUploaded &&
+    doc.status !== 'Effective' &&
+    (doc.content_review_status === 'Passed' || doc.status === 'Approval Pending' || doc.qc_status === 'Passed' || doc.status === 'QC Passed')
+  );
+
+  // Who can author new revision? Only author/uploader or Admin when revisions are requested
+  const canAuthorNewVersionOnThisDoc = Boolean(
+    (isSelfUploaded || isAdmin) &&
+    !isInspectorMode &&
+    (doc.status === 'Revision Required' || doc.status === 'QC Rejected' || doc.qc_status === 'Failed' || doc.qc_status === 'Query Raised' || doc.status === 'Draft' || doc.status === 'Submitted')
+  );
+
+  // Who can add review annotations? Only assigned reviewer or Admin
+  const canAddAnnotationsOnThisDoc = Boolean(
+    !isInspectorMode &&
+    !isSelfUploaded &&
+    (isAdmin || (isAssignedReviewer && (isDocController || isTmfLeadOrReviewer)))
+  );
+
+  // Who can resolve annotations? Only document author/uploader or Admin
+  const canResolveAnnotationsOnThisDoc = Boolean(
+    (isSelfUploaded || isAdmin) &&
+    !isInspectorMode
+  );
+
+  // Concurrency Lock: Only assigned reviewer, author, or Admin
+  const canToggleLockOnThisDoc = Boolean(
+    !isInspectorMode &&
+    (isAdmin || isAssignedReviewer || isSelfUploaded)
   );
 
   const currentStageNum = Number(doc.lifecycle_stage) || 5;
@@ -448,19 +516,26 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
             <div className="flex items-center gap-1.5 flex-wrap">
               {/* Lock & Unlock Concurrency Button */}
               {!isInspectorMode && (
-                <button
-                  type="button"
-                  onClick={() => toggleDocumentLock(doc.document_id, currentUser)}
-                  className={`flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-bold border transition-colors cursor-pointer ${
-                    isLocked
-                      ? 'bg-amber-100 hover:bg-amber-200 text-amber-900 border-amber-300'
-                      : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300 shadow-2xs'
-                  }`}
-                  title={isLocked ? `Locked by ${doc.locked_by_user_name || 'Reviewer'}` : "Lock document against concurrent modifications"}
-                >
-                  {isLocked ? <Lock className="w-3.5 h-3.5 text-amber-700" /> : <Unlock className="w-3.5 h-3.5 text-slate-500" />}
-                  <span>{isLocked ? `Locked (${doc.locked_by_user_name?.split(' ')[0] || 'User'})` : 'Lock Doc'}</span>
-                </button>
+                canToggleLockOnThisDoc ? (
+                  <button
+                    type="button"
+                    onClick={() => toggleDocumentLock(doc.document_id, currentUser)}
+                    className={`flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-bold border transition-colors cursor-pointer ${
+                      isLocked
+                        ? 'bg-amber-100 hover:bg-amber-200 text-amber-900 border-amber-300'
+                        : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300 shadow-2xs'
+                    }`}
+                    title={isLocked ? `Locked by ${doc.locked_by_user_name || 'Reviewer'}` : "Lock document against concurrent modifications"}
+                  >
+                    {isLocked ? <Lock className="w-3.5 h-3.5 text-amber-700" /> : <Unlock className="w-3.5 h-3.5 text-slate-500" />}
+                    <span>{isLocked ? `Locked (${doc.locked_by_user_name?.split(' ')[0] || 'User'})` : 'Lock Doc'}</span>
+                  </button>
+                ) : isLocked ? (
+                  <span className="flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-medium bg-amber-50 text-amber-800 border border-amber-200">
+                    <Lock className="w-3 h-3 text-amber-600" />
+                    <span>Locked by {doc.locked_by_user_name || 'Reviewer'}</span>
+                  </span>
+                ) : null
               )}
 
               {/* Toggle between Actual Uploaded File and ALCOA+ Certificate */}
@@ -527,7 +602,7 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
 
               {!isInspectorMode && (
                 <>
-                  {canEditMetadata && (
+                  {canEditMetadata && (isSelfUploaded || isAdmin) && doc.status !== 'Effective' && (
                     <button
                       type="button"
                       onClick={() => {
@@ -541,7 +616,7 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                       Rename
                     </button>
                   )}
-                  {(canDelete || isAdmin) && (
+                  {isAdmin && (
                     <button
                       type="button"
                       onClick={handleDeleteCurrentDoc}
@@ -674,17 +749,19 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                 <div className="bg-slate-50 p-3 rounded border border-slate-200 text-[11px] relative group">
                   <div className="flex items-center justify-between mb-1">
                     <p className="font-semibold text-slate-900">1. ALCOA+ DATA INTEGRITY PROOF</p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAnnotationSection("1. ALCOA+ Data Integrity Proof");
-                        setShowAddAnnotation(true);
-                        setActiveTab('annotations');
-                      }}
-                      className="text-[10px] text-blue-600 hover:text-blue-800 font-bold flex items-center gap-0.5 opacity-80 hover:opacity-100 cursor-pointer"
-                    >
-                      <MessageSquarePlus className="w-3 h-3" /> Add Annotation
-                    </button>
+                    {canAddAnnotationsOnThisDoc && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAnnotationSection("1. ALCOA+ Data Integrity Proof");
+                          setShowAddAnnotation(true);
+                          setActiveTab('annotations');
+                        }}
+                        className="text-[10px] text-blue-600 hover:text-blue-800 font-bold flex items-center gap-0.5 opacity-80 hover:opacity-100 cursor-pointer"
+                      >
+                        <MessageSquarePlus className="w-3 h-3" /> Add Annotation
+                      </button>
+                    )}
                   </div>
                   <p>Attributable: Uploaded by {doc.uploaded_by_name} ({doc.uploaded_by_id})</p>
                   <p>Original/Certified: {doc.is_certified_copy ? 'Certified Copy (Verified)' : 'Original Electronic Master'}</p>
@@ -695,17 +772,19 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                 <div className="p-3 bg-white rounded border border-slate-200 text-[11px] relative space-y-1">
                   <div className="flex items-center justify-between">
                     <p className="font-semibold text-slate-900">2. PURPOSE AND CLINICAL SCOPE</p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAnnotationSection("2. Purpose and Clinical Scope");
-                        setShowAddAnnotation(true);
-                        setActiveTab('annotations');
-                      }}
-                      className="text-[10px] text-blue-600 hover:text-blue-800 font-bold flex items-center gap-0.5 cursor-pointer"
-                    >
-                      <MessageSquarePlus className="w-3 h-3" /> Add Annotation
-                    </button>
+                    {canAddAnnotationsOnThisDoc && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAnnotationSection("2. Purpose and Clinical Scope");
+                          setShowAddAnnotation(true);
+                          setActiveTab('annotations');
+                        }}
+                        className="text-[10px] text-blue-600 hover:text-blue-800 font-bold flex items-center gap-0.5 cursor-pointer"
+                      >
+                        <MessageSquarePlus className="w-3 h-3" /> Add Annotation
+                      </button>
+                    )}
                   </div>
                   <p className="text-slate-700 leading-relaxed text-justify">
                     This official trial record forms an integral part of the Electronic Trial Master File (eTMF) for Study Protocol {doc.study_id}. 
@@ -717,17 +796,19 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                 <div className="p-3 bg-slate-50 border border-slate-200 rounded relative space-y-1">
                   <div className="flex items-center justify-between">
                     <p className="font-semibold text-slate-900 text-[11px]">3. EXTRACTED OCR &amp; CONTENT MANIFEST</p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAnnotationSection("3. Extracted OCR & Content Manifest");
-                        setShowAddAnnotation(true);
-                        setActiveTab('annotations');
-                      }}
-                      className="text-[10px] text-blue-600 hover:text-blue-800 font-bold flex items-center gap-0.5 cursor-pointer"
-                    >
-                      <MessageSquarePlus className="w-3 h-3" /> Add Annotation
-                    </button>
+                    {canAddAnnotationsOnThisDoc && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAnnotationSection("3. Extracted OCR & Content Manifest");
+                          setShowAddAnnotation(true);
+                          setActiveTab('annotations');
+                        }}
+                        className="text-[10px] text-blue-600 hover:text-blue-800 font-bold flex items-center gap-0.5 cursor-pointer"
+                      >
+                        <MessageSquarePlus className="w-3 h-3" /> Add Annotation
+                      </button>
+                    )}
                   </div>
                   <div className="p-2 bg-white border border-slate-200 rounded font-mono text-[10px] text-slate-700 max-h-40 overflow-y-auto">
                     {doc.ocr_text || "Clinical record body indexed. Full OCR text verified and certified."}
@@ -909,8 +990,8 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                     </p>
                   )}
 
-                  {/* Actions for Document Controller or Admin */}
-                  {(isDocController || isAdmin) && !isSelfUploaded && doc.status !== 'Effective' && (
+                  {/* Actions for Assigned QC Reviewer or Admin Fallback */}
+                  {canPerformQcOnThisDoc ? (
                     <div className="pt-2 flex flex-wrap gap-2">
                       <button
                         type="button"
@@ -933,6 +1014,14 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                       >
                         <XCircle className="w-3.5 h-3.5" /> Reject QC
                       </button>
+                    </div>
+                  ) : (
+                    <div className="pt-2 text-[10px] text-slate-500 italic bg-slate-50 p-2 rounded border border-slate-200">
+                      {doc.qc_status === 'Passed'
+                        ? '✓ Quality Control verified by QC Reviewer under SOP-TMF-04.'
+                        : isSelfUploaded
+                        ? 'Maker-Checker restriction: Document author cannot QC their own upload.'
+                        : `Awaiting QC review by assigned reviewer (${doc.assigned_reviewer_name || doc.qc_reviewer_name || 'Document Controller / System Admin'}).`}
                     </div>
                   )}
                 </div>
@@ -958,7 +1047,8 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                     Inline Annotations: <strong>{openAnnotationsCount} Open Queries</strong>
                   </p>
 
-                  {(isTmfLeadOrReviewer || isAdmin) && !isSelfUploaded && doc.status !== 'Effective' && (
+                  {/* Actions for Assigned Content Reviewer or Admin Fallback */}
+                  {canPerformContentReviewOnThisDoc ? (
                     <div className="pt-2 flex flex-wrap gap-2">
                       <button
                         type="button"
@@ -974,6 +1064,14 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                       >
                         <RotateCcw className="w-3.5 h-3.5" /> Request Revision
                       </button>
+                    </div>
+                  ) : (
+                    <div className="pt-2 text-[10px] text-slate-500 italic bg-slate-50 p-2 rounded border border-slate-200">
+                      {doc.content_review_status === 'Passed'
+                        ? '✓ Content review sign-off completed.'
+                        : isSelfUploaded
+                        ? 'Maker-Checker restriction: Document author cannot approve their own upload.'
+                        : `Awaiting content review by assigned reviewer (${doc.assigned_reviewer_name || doc.content_reviewer_name || 'TMF Lead / System Admin'}).`}
                     </div>
                   )}
                 </div>
@@ -999,7 +1097,8 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                     </p>
                   )}
 
-                  {isAdmin && !isSelfUploaded && doc.status !== 'Effective' && (
+                  {/* Actions for System Administrator */}
+                  {canPerformFinalApprovalOnThisDoc ? (
                     <div className="pt-2">
                       <button
                         type="button"
@@ -1009,11 +1108,21 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                         <ShieldCheck className="w-4 h-4" /> Grant Final Approval &amp; Make Effective
                       </button>
                     </div>
+                  ) : (
+                    <div className="pt-2 text-[10px] text-slate-500 italic bg-blue-50/50 p-2 rounded border border-blue-100">
+                      {doc.status === 'Effective'
+                        ? '✓ Final Administrator approval granted. Document is Effective and locked.'
+                        : doc.status === 'Revision Required' || doc.qc_status === 'Failed'
+                        ? 'Final approval suspended: Pending remediation of queries and revision resubmission.'
+                        : isSelfUploaded
+                        ? 'Maker-Checker restriction: Independent System Administrator approval required.'
+                        : 'Mandatory System Administrator electronic sign-off required to render document Effective.'}
+                    </div>
                   )}
                 </div>
 
                 {/* Request Revision / Author New Version Button */}
-                {!isInspectorMode && (
+                {canAuthorNewVersionOnThisDoc && (
                   <div className="pt-2 border-t border-slate-200">
                     <button
                       type="button"
@@ -1041,7 +1150,7 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                       MS Word-style line &amp; section deficiency comments for author remediation.
                     </p>
                   </div>
-                  {!isInspectorMode && (
+                  {canAddAnnotationsOnThisDoc && (
                     <button
                       type="button"
                       onClick={() => setShowAddAnnotation(!showAddAnnotation)}
@@ -1053,7 +1162,7 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                 </div>
 
                 {/* Add Annotation Form */}
-                {showAddAnnotation && (
+                {showAddAnnotation && canAddAnnotationsOnThisDoc && (
                   <form onSubmit={handleAddAnnotationSubmit} className="p-3 bg-blue-50/60 rounded-lg border border-blue-200 space-y-2 text-xs">
                     <p className="font-bold text-blue-900">Add Review Comment / Annotation:</p>
                     
@@ -1148,7 +1257,7 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                           <div className="bg-emerald-50 p-2 rounded border border-emerald-200 text-[10px] space-y-0.5">
                             <p className="font-bold text-emerald-900">Resolved by {a.resolved_by}:</p>
                             <p className="text-emerald-800 italic">"{a.resolution_notes}"</p>
-                            {!isInspectorMode && (
+                            {canAddAnnotationsOnThisDoc && (
                               <button
                                 type="button"
                                 onClick={() => handleReopenAnnotation(a.id)}
@@ -1161,43 +1270,49 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                         ) : (
                           /* Resolution box if Open */
                           <div className="pt-1 border-t border-slate-100">
-                            {resolvingId === a.id ? (
-                              <div className="space-y-1.5">
-                                <input
-                                  type="text"
-                                  value={resolutionText}
-                                  onChange={(e) => setResolutionText(e.target.value)}
-                                  placeholder="Describe how this comment was resolved..."
-                                  className="w-full bg-white border border-slate-300 rounded p-1.5 text-xs"
-                                />
-                                <div className="flex gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleResolveAnnotationSubmit(a.id)}
-                                    className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded font-bold text-[10px] cursor-pointer"
-                                  >
-                                    Submit Resolution
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => setResolvingId(null)}
-                                    className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded text-[10px] cursor-pointer"
-                                  >
-                                    Cancel
-                                  </button>
+                            {canResolveAnnotationsOnThisDoc ? (
+                              resolvingId === a.id ? (
+                                <div className="space-y-1.5">
+                                  <input
+                                    type="text"
+                                    value={resolutionText}
+                                    onChange={(e) => setResolutionText(e.target.value)}
+                                    placeholder="Describe how this comment was resolved..."
+                                    className="w-full bg-white border border-slate-300 rounded p-1.5 text-xs"
+                                  />
+                                  <div className="flex gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleResolveAnnotationSubmit(a.id)}
+                                      className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded font-bold text-[10px] cursor-pointer"
+                                    >
+                                      Submit Resolution
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setResolvingId(null)}
+                                      className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded text-[10px] cursor-pointer"
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
                                 </div>
-                              </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setResolvingId(a.id);
+                                    setResolutionText("");
+                                  }}
+                                  className="text-[10px] font-bold text-emerald-700 hover:underline flex items-center gap-1 cursor-pointer"
+                                >
+                                  <CornerDownRight className="w-3 h-3" /> Address &amp; Mark Resolved
+                                </button>
+                              )
                             ) : (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setResolvingId(a.id);
-                                  setResolutionText("");
-                                }}
-                                className="text-[10px] font-bold text-emerald-700 hover:underline flex items-center gap-1 cursor-pointer"
-                              >
-                                <CornerDownRight className="w-3 h-3" /> Address &amp; Mark Resolved
-                              </button>
+                              <span className="text-[10px] text-slate-400 italic">
+                                Action required: Document author to remediate and resolve this query in new revision.
+                              </span>
                             )}
                           </div>
                         )}
@@ -1468,7 +1583,7 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                     </span>
                   </div>
 
-                  {!isInspectorMode && (
+                  {!isInspectorMode && canToggleLockOnThisDoc && (
                     <button
                       onClick={() => toggleDocumentLock(doc.document_id, currentUser)}
                       className={`w-full py-1.5 rounded-lg font-semibold flex items-center justify-center gap-1.5 cursor-pointer ${
@@ -1511,7 +1626,7 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                     ))}
                   </div>
 
-                  {!isInspectorMode && (
+                  {canAuthorNewVersionOnThisDoc && (
                     <button
                       onClick={() => setIsVersionModalOpen(true)}
                       className="w-full py-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white font-semibold flex items-center justify-center gap-1.5 shadow-xs cursor-pointer text-xs"
@@ -1588,13 +1703,18 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                     Status: <span className={`font-bold ${doc.status === 'Effective' ? 'text-emerald-700' : 'text-amber-700'}`}>{doc.status}</span>
                   </p>
 
-                  {!isInspectorMode && doc.status !== 'Effective' && (canSign || isAdmin) && (
+                  {!isInspectorMode && doc.status !== 'Effective' && (isAdmin || (canSign && !isSelfUploaded)) && (
                     <button
                       onClick={() => setIsSignModalOpen(true)}
                       className="w-full mt-2 py-2 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold shadow-md shadow-emerald-200 flex items-center justify-center gap-1.5 cursor-pointer"
                     >
                       <Lock className="w-3.5 h-3.5" /> Execute Part 11 E-Signature
                     </button>
+                  )}
+                  {isSelfUploaded && !isAdmin && doc.status !== 'Effective' && (
+                    <p className="text-[10px] text-amber-700 bg-amber-50 p-2 rounded border border-amber-200 mt-2">
+                      Segregation of Duties: Uploader cannot apply final approval e-signature to their own upload.
+                    </p>
                   )}
                 </div>
               </div>

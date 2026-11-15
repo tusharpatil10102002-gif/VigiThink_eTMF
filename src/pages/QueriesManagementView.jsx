@@ -278,41 +278,66 @@ export default function QueriesManagementView() {
                         <div className="flex items-center justify-end gap-1.5">
                           {q.status === 'Open' || q.status === 'Response Provided' ? (
                             <>
-                              {canQcPass ? (
-                                <>
-                                  <button
-                                    type="button"
-                                    onClick={() => setRespondingQueryId(q.query_id)}
-                                    className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-semibold text-xs shadow-2xs cursor-pointer"
-                                  >
-                                    Verify / Resolve
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleResolveSubmit(q.query_id, 'Resolved')}
-                                    className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold text-xs shadow-2xs cursor-pointer flex items-center gap-1"
-                                    title="1-Click Mark Resolved & Approve Document"
-                                  >
-                                    <CheckCircle2 className="w-3.5 h-3.5" /> Quick Approve
-                                  </button>
-                                </>
-                              ) : (
-                                <>
-                                  <button
-                                    type="button"
-                                    onClick={() => setRespondingQueryId(q.query_id)}
-                                    className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold text-xs shadow-2xs cursor-pointer"
-                                    title="Submit Remediation Explanation for Quality Review"
-                                  >
-                                    {q.status === 'Response Provided' ? 'Update Response' : 'Respond to Query'}
-                                  </button>
-                                  {q.status === 'Response Provided' && (
-                                    <span className="text-amber-700 font-semibold text-[10px] bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
-                                      Pending QA Verification
-                                    </span>
-                                  )}
-                                </>
-                              )}
+                              {(() => {
+                                const isSelfUploaded = Boolean(
+                                  targetDoc && (
+                                    (targetDoc.uploaded_by_id && currentUser?.id && targetDoc.uploaded_by_id === currentUser.id) ||
+                                    (targetDoc.submitted_by_id && currentUser?.id && targetDoc.submitted_by_id === currentUser.id) ||
+                                    (targetDoc.uploaded_by_name && currentUser?.name && targetDoc.uploaded_by_name.trim().toLowerCase() === currentUser.name.trim().toLowerCase()) ||
+                                    (targetDoc.submitted_by_name && currentUser?.name && targetDoc.submitted_by_name.trim().toLowerCase() === currentUser.name.trim().toLowerCase())
+                                  )
+                                );
+                                const isAdmin = Boolean(currentUser?.roleId === 'system_admin' || currentRole?.id === 'system_admin' || currentUser?.id === 'admin');
+                                const canClearThisQuery = canQcPass && (!isSelfUploaded || isAdmin);
+
+                                if (canClearThisQuery) {
+                                  return (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => setRespondingQueryId(q.query_id)}
+                                        className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-semibold text-xs shadow-2xs cursor-pointer"
+                                      >
+                                        Verify / Resolve
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleResolveSubmit(q.query_id, 'Resolved')}
+                                        className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold text-xs shadow-2xs cursor-pointer flex items-center gap-1"
+                                        title="1-Click Mark Resolved & Approve Document"
+                                      >
+                                        <CheckCircle2 className="w-3.5 h-3.5" /> Quick Approve
+                                      </button>
+                                    </>
+                                  );
+                                }
+
+                                if (isSelfUploaded) {
+                                  return (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => setRespondingQueryId(q.query_id)}
+                                        className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold text-xs shadow-2xs cursor-pointer"
+                                        title="Submit Remediation Explanation for Quality Review"
+                                      >
+                                        {q.status === 'Response Provided' ? 'Update Response' : 'Respond to Query'}
+                                      </button>
+                                      {q.status === 'Response Provided' && (
+                                        <span className="text-amber-700 font-semibold text-[10px] bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
+                                          Response Under QC Review
+                                        </span>
+                                      )}
+                                    </>
+                                  );
+                                }
+
+                                return (
+                                  <span className="text-slate-400 italic text-[11px]">
+                                    Awaiting resolution
+                                  </span>
+                                );
+                              })()}
                             </>
                           ) : (
                             <span className="text-emerald-600 font-semibold flex items-center justify-end gap-1 text-xs">
