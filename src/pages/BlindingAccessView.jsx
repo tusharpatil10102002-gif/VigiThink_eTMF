@@ -11,11 +11,24 @@ export default function BlindingAccessView() {
   const [unblindLog, setUnblindLog] = useState(() => {
     try {
       const saved = localStorage.getItem('vigithink_unblind_log');
+      if (saved && (saved.includes('SUBJ-101-04') || saved.includes('Arvind Mehta'))) {
+        localStorage.removeItem('vigithink_unblind_log');
+        return [];
+      }
       return saved ? JSON.parse(saved) : [];
     } catch {
       return [];
     }
   });
+
+  const isAdmin = Boolean(currentUser?.roleId === 'system_admin' || currentUser?.id === 'admin');
+
+  const handleClearUnblindLogs = () => {
+    if (window.confirm("Are you sure you want to clear historical code-break records?")) {
+      setUnblindLog([]);
+      localStorage.removeItem('vigithink_unblind_log');
+    }
+  };
 
   const [bannerMsg, setBannerMsg] = useState("");
 
@@ -126,10 +139,21 @@ export default function BlindingAccessView() {
 
       {/* Code-break Audit History */}
       <div className="glass-panel p-5 rounded-xl space-y-4">
-        <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-          <Eye className="w-4 h-4 text-blue-600" />
-          Historical Code-Break Audit Trail
-        </h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+            <Eye className="w-4 h-4 text-blue-600" />
+            Historical Code-Break Audit Trail
+          </h2>
+          {isAdmin && unblindLog.length > 0 && (
+            <button
+              type="button"
+              onClick={handleClearUnblindLogs}
+              className="px-2.5 py-1 bg-white hover:bg-rose-50 text-rose-600 border border-rose-300 rounded text-xs font-semibold cursor-pointer"
+            >
+              Clear Records
+            </button>
+          )}
+        </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse min-w-[650px]">

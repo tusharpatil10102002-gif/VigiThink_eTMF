@@ -696,7 +696,7 @@ export default function Dashboard() {
                           <div>
                             <span className="text-slate-900 font-semibold">{doc.submitted_by_name || doc.uploaded_by_name || 'Uploader'}</span>
                             <span className="text-slate-500 block text-[10px]">
-                              to {doc.assigned_reviewer_name ? doc.assigned_reviewer_name.split(' ')[0] : 'TMF Lead'}
+                              to {typeof doc.assigned_reviewer_name === 'string' ? doc.assigned_reviewer_name.split(' ')[0] : (doc.assigned_reviewer_name?.name || 'TMF Lead')}
                             </span>
                           </div>
                         ) : (

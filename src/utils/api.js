@@ -7,26 +7,31 @@ export const resolveApiUrl = (endpoint) => {
     return endpoint;
   }
 
+  // Normalize leading slash
+  let clean = String(endpoint).trim();
+  if (!clean.startsWith('/')) {
+    clean = `/${clean}`;
+  }
+
+  const isUnderEtmf = typeof window !== 'undefined' && window.location.pathname.startsWith('/etmf');
+
   // 1. If explicit backend API URL provided in environment
   const envApi = import.meta.env.VITE_API_URL;
   if (envApi) {
     const cleanBase = envApi.replace(/\/$/, '');
-    const cleanPath = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
-    return `${cleanBase}${cleanPath}`;
+    return `${cleanBase}${clean}`;
   }
 
   // 2. If running under /etmf subpath (e.g. https://vigithink.com/etmf/)
-  if (typeof window !== 'undefined' && window.location.pathname.startsWith('/etmf')) {
-    if (endpoint.startsWith('/api')) {
-      return `/etmf${endpoint}`;
+  if (isUnderEtmf) {
+    if (clean.startsWith('/etmf/')) {
+      return clean;
     }
-    if (endpoint.startsWith('/uploads')) {
-      return `/etmf${endpoint}`;
-    }
+    return `/etmf${clean}`;
   }
 
   // 3. Default standard path
-  return endpoint;
+  return clean;
 };
 
 export const apiFetch = (endpoint, options) => {

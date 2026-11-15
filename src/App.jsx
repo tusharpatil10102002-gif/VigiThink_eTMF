@@ -91,120 +91,180 @@ function MainAppLayout() {
         {/* Main Workspace Area */}
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-slate-100">
           <main className="flex-1 overflow-y-auto">
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/explorer" element={<TmfExplorer />} />
-              <Route 
-                path="/reports" 
-                element={
-                  <RoleGuardRoute requiredPermission="review">
-                    <ReportsView />
-                  </RoleGuardRoute>
-                } 
-              />
-              <Route 
-                path="/studies" 
-                element={
-                  <RoleGuardRoute requiredPermission="manageStudies">
-                    <StudiesManagement />
-                  </RoleGuardRoute>
-                } 
-              />
-              <Route path="/edl" element={<ExpectedDocumentList />} />
-              <Route 
-                path="/qc-queue" 
-                element={
-                  <RoleGuardRoute requiredPermission="qcReview">
-                    <QcReviewQueue />
-                  </RoleGuardRoute>
-                } 
-              />
-              <Route path="/tasks" element={<TaskInbox />} />
-              <Route 
-                path="/audit-trail" 
-                element={
-                  <RoleGuardRoute requiredPermission="viewAuditTrail">
-                    <AuditTrailView />
-                  </RoleGuardRoute>
-                } 
-              />
-              <Route 
-                path="/inspector-portal" 
-                element={
-                  <RoleGuardRoute requiredPermission="viewInspectorPortal">
-                    <InspectorPortal />
-                  </RoleGuardRoute>
-                } 
-              />
-              <Route path="/version-control" element={<VersionControlView />} />
-              <Route path="/blinding-access" element={<BlindingAccessView />} />
-              <Route 
-                path="/roles-access" 
-                element={
-                  <RoleGuardRoute requiredPermission="manageUsers">
-                    <UserRoleManagement />
-                  </RoleGuardRoute>
-                } 
-              />
-              <Route 
-                path="/system-validation" 
-                element={
-                  <RoleGuardRoute requiredPermission="viewAuditTrail">
-                    <ValidationRepository />
-                  </RoleGuardRoute>
-                } 
-              />
-              
-              {/* Clinical Trial Work Modules */}
-              <Route path="/inventory" element={<InventoryView />} />
-              <Route path="/queries" element={<QueriesManagementView />} />
-              <Route 
-                path="/quality" 
-                element={
-                  <RoleGuardRoute requiredPermission="review">
-                    <QualityDashboardView />
-                  </RoleGuardRoute>
-                } 
-              />
-              <Route 
-                path="/timeliness" 
-                element={
-                  <RoleGuardRoute requiredPermission="review">
-                    <TimelinessSlaView />
-                  </RoleGuardRoute>
-                } 
-              />
-              <Route 
-                path="/jobs" 
-                element={
-                  <RoleGuardRoute requiredPermission="admin">
-                    <ScheduledJobsView />
-                  </RoleGuardRoute>
-                } 
-              />
-              <Route path="/inactive-docs" element={<InactiveDocsView />} />
-              <Route path="/notes" element={<TrialNotesView />} />
-              <Route path="/monitoring-visits" element={<MonitoringVisitsView />} />
-              <Route 
-                path="/removed" 
-                element={
-                  <RoleGuardRoute requiredPermission="viewAuditTrail">
-                    <RemovedDocsView />
-                  </RoleGuardRoute>
-                } 
-              />
-              
-              {/* Route Aliases for Legacy & Notification Deep-Links */}
-              <Route path="/documents" element={<Navigate to="/explorer" replace />} />
-              <Route path="/documents/:id" element={<Navigate to="/explorer" replace />} />
+            <RouteErrorBoundary>
+              <Routes>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/explorer" element={<TmfExplorer />} />
+                <Route 
+                  path="/reports" 
+                  element={
+                    <RoleGuardRoute requiredPermission="review">
+                      <ReportsView />
+                    </RoleGuardRoute>
+                  } 
+                />
+                <Route 
+                  path="/studies" 
+                  element={
+                    <RoleGuardRoute requiredPermission="manageStudies">
+                      <StudiesManagement />
+                    </RoleGuardRoute>
+                  } 
+                />
+                <Route path="/edl" element={<ExpectedDocumentList />} />
+                <Route 
+                  path="/qc-queue" 
+                  element={
+                    <RoleGuardRoute requiredPermission="qcReview">
+                      <QcReviewQueue />
+                    </RoleGuardRoute>
+                  } 
+                />
+                <Route path="/tasks" element={<TaskInbox />} />
+                <Route 
+                  path="/audit-trail" 
+                  element={
+                    <RoleGuardRoute requiredPermission="viewAuditTrail">
+                      <AuditTrailView />
+                    </RoleGuardRoute>
+                  } 
+                />
+                <Route 
+                  path="/inspector-portal" 
+                  element={
+                    <RoleGuardRoute requiredPermission="viewInspectorPortal">
+                      <InspectorPortal />
+                    </RoleGuardRoute>
+                  } 
+                />
+                <Route path="/version-control" element={<VersionControlView />} />
+                <Route path="/blinding-access" element={<BlindingAccessView />} />
+                <Route 
+                  path="/roles-access" 
+                  element={
+                    <RoleGuardRoute requiredPermission="manageUsers">
+                      <UserRoleManagement />
+                    </RoleGuardRoute>
+                  } 
+                />
+                <Route 
+                  path="/system-validation" 
+                  element={
+                    <RoleGuardRoute requiredPermission="viewAuditTrail">
+                      <ValidationRepository />
+                    </RoleGuardRoute>
+                  } 
+                />
+                
+                {/* Clinical Trial Work Modules */}
+                <Route path="/inventory" element={<InventoryView />} />
+                <Route path="/queries" element={<QueriesManagementView />} />
+                <Route 
+                  path="/quality" 
+                  element={
+                    <RoleGuardRoute requiredPermission="review">
+                      <QualityDashboardView />
+                    </RoleGuardRoute>
+                  } 
+                />
+                <Route 
+                  path="/timeliness" 
+                  element={
+                    <RoleGuardRoute requiredPermission="review">
+                      <TimelinessSlaView />
+                    </RoleGuardRoute>
+                  } 
+                />
+                <Route 
+                  path="/jobs" 
+                  element={
+                    <RoleGuardRoute requiredPermission="admin">
+                      <ScheduledJobsView />
+                    </RoleGuardRoute>
+                  } 
+                />
+                <Route path="/inactive-docs" element={<InactiveDocsView />} />
+                <Route path="/notes" element={<TrialNotesView />} />
+                <Route path="/monitoring-visits" element={<MonitoringVisitsView />} />
+                <Route 
+                  path="/removed" 
+                  element={
+                    <RoleGuardRoute requiredPermission="viewAuditTrail">
+                      <RemovedDocsView />
+                    </RoleGuardRoute>
+                  } 
+                />
+                
+                {/* Route Aliases for Legacy & Notification Deep-Links */}
+                <Route path="/documents" element={<Navigate to="/explorer" replace />} />
+                <Route path="/documents/:id" element={<Navigate to="/explorer" replace />} />
 
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Routes>
+            </RouteErrorBoundary>
           </main>
         </div>
       </div>
     </div>
   );
+}
+
+class RouteErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, info) {
+    console.error('[VigiThink Route Error]', error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      const etmfHome = typeof window !== 'undefined' && window.location.pathname.startsWith('/etmf') ? '/etmf/' : '/';
+      return (
+        <div className="p-6 max-w-xl mx-auto my-8 bg-white border border-slate-300 rounded-xl shadow-lg text-center space-y-4">
+          <div className="w-12 h-12 rounded-full bg-blue-50 text-blue-700 flex items-center justify-center mx-auto text-lg font-bold border border-blue-200">
+            i
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-sm font-bold text-slate-900">Workspace Action Notice</h3>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              The requested view encountered a temporary display state. Your clinical trial records, signatures, and audit trail are safely preserved.
+            </p>
+          </div>
+          {this.state.error && (
+            <div className="text-left bg-slate-50 border border-slate-200 rounded p-2.5 text-[11px] text-slate-700 font-mono break-all max-h-24 overflow-y-auto">
+              {this.state.error.message || String(this.state.error)}
+            </div>
+          )}
+          <div className="flex items-center justify-center gap-2 pt-1">
+            <button
+              type="button"
+              onClick={() => {
+                this.setState({ hasError: false, error: null });
+                window.location.href = etmfHome;
+              }}
+              className="px-4 py-2 bg-blue-700 hover:bg-blue-800 text-white text-xs font-bold rounded shadow-xs cursor-pointer transition"
+            >
+              Return to eTMF Workspace
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                this.setState({ hasError: false, error: null });
+              }}
+              className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded border border-slate-300 cursor-pointer transition"
+            >
+              Retry View
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 class ProductionErrorBoundary extends React.Component {
@@ -222,7 +282,7 @@ class ProductionErrorBoundary extends React.Component {
     if (this.state.hasError) {
       const etmfHome = typeof window !== 'undefined' && window.location.pathname.startsWith('/etmf') ? '/etmf/' : '/';
       return (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 font-sans">
+        <div className="min-h-screen bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 font-sans">
           <div className="max-w-md w-full bg-white border border-slate-300 rounded-xl p-6 shadow-2xl text-center space-y-4">
             <div className="w-11 h-11 rounded-full bg-blue-50 text-blue-700 flex items-center justify-center mx-auto text-lg font-bold border border-blue-200">
               i
@@ -233,15 +293,21 @@ class ProductionErrorBoundary extends React.Component {
                 The requested view encountered a temporary display state. Your clinical trial records, signatures, and audit trail are safely preserved.
               </p>
             </div>
+            {this.state.error && (
+              <div className="text-left bg-slate-50 border border-slate-200 rounded p-2 text-[10px] text-slate-600 font-mono break-all max-h-24 overflow-y-auto">
+                {this.state.error.message || String(this.state.error)}
+              </div>
+            )}
             <div className="flex items-center justify-center gap-2 pt-1">
               <button
                 type="button"
                 onClick={() => {
                   this.setState({ hasError: false, error: null });
+                  window.location.href = etmfHome;
                 }}
                 className="px-4 py-2 bg-blue-700 hover:bg-blue-800 text-white text-xs font-bold rounded shadow-xs cursor-pointer transition"
               >
-                Continue in Workspace
+                Return to Workspace
               </button>
               <button
                 type="button"

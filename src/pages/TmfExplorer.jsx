@@ -179,7 +179,7 @@ export default function TmfExplorer() {
     return true;
   });
 
-  const activeZoneObj = zonesTaxonomy.find(z => z.id === activeZoneId);
+  const activeZoneObj = (zonesTaxonomy || []).find(z => z.id === activeZoneId);
 
   return (
     <div className="p-4 space-y-3 bg-slate-100 min-h-full text-xs font-sans">
@@ -407,7 +407,7 @@ export default function TmfExplorer() {
             {(activeStudyObj?.sites || []).map((site) => {
               const siteTargetId = site.number || site.id;
               const assignedUser = (allUsers || []).find(
-                u => u.siteScope === siteTargetId || (site.assignedPiName && u.name.toLowerCase().includes(site.assignedPiName.split(' ')[0].toLowerCase()))
+                u => u.siteScope === siteTargetId || (typeof site.assignedPiName === 'string' && u.name && typeof u.name === 'string' && u.name.toLowerCase().includes(site.assignedPiName.split(' ')[0].toLowerCase()))
               );
               const siteDocsCount = documents.filter(d => d.study_id === activeStudyObj?.id && (!d.site_id || d.site_id.includes(siteTargetId))).length;
               const openStudyId = activeStudyObj?.id || activeStudyFolder;
@@ -640,7 +640,7 @@ export default function TmfExplorer() {
                       : 'bg-white text-slate-700 border-slate-300 hover:bg-sky-50'
                   }`}
                 >
-                  Site {site.id} {site.assignedStudent ? `(${site.assignedStudent.split(' ')[0]})` : ''}
+                  Site {site.id} {site.assignedStudent ? `(${typeof site.assignedStudent === 'string' ? site.assignedStudent.split(' ')[0] : (site.assignedStudent?.name || '')})` : ''}
                 </button>
               ))}
             </div>

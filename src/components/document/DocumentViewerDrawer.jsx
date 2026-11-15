@@ -47,6 +47,93 @@ import { useAuth } from '../../context/AuthContext';
 import ESignatureModal from './ESignatureModal';
 import NewVersionModal from './NewVersionModal';
 
+export const safeFormatDate = (val, fallback = '—') => {
+  if (!val) return fallback;
+  if (typeof val === 'string') {
+    if (val.includes('T')) return val.split('T')[0];
+    return val;
+  }
+  if (val instanceof Date) {
+    try {
+      return val.toISOString().split('T')[0];
+    } catch {
+      return fallback;
+    }
+  }
+  return String(val);
+};
+
+export const safeFormatDateTime = (val, fallback = '—') => {
+  if (!val) return fallback;
+  if (typeof val === 'string') {
+    if (val.includes('(UTC') || val.includes(':')) {
+      return val;
+    }
+    try {
+      const d = new Date(val);
+      if (isNaN(d.getTime())) return val;
+      return d.toLocaleString('en-GB');
+    } catch {
+      return val;
+    }
+  }
+  if (val instanceof Date) {
+    try {
+      return val.toLocaleString('en-GB');
+    } catch {
+      return fallback;
+    }
+  }
+  return String(val);
+};
+
+class DrawerErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, info) {
+    console.error('[Document Viewer Drawer Error]', error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-300 rounded-xl p-6 max-w-md w-full shadow-2xl text-center space-y-4">
+            <div className="w-12 h-12 rounded-full bg-amber-50 text-amber-700 flex items-center justify-center mx-auto text-xl font-bold border border-amber-200">
+              !
+            </div>
+            <div className="space-y-1">
+              <h3 className="text-sm font-bold text-slate-900">Document Display Notice</h3>
+              <p className="text-xs text-slate-600">
+                This document record could not be rendered in the preview drawer. The record data, signatures, and audit trail are preserved safely.
+              </p>
+            </div>
+            {this.state.error && (
+              <div className="text-left bg-slate-50 border border-slate-200 rounded p-2 text-[10px] text-slate-600 font-mono break-all max-h-20 overflow-y-auto">
+                {this.state.error.message || String(this.state.error)}
+              </div>
+            )}
+            <div className="flex items-center justify-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={this.props.onClose}
+                className="px-4 py-2 bg-blue-700 hover:bg-blue-800 text-white text-xs font-bold rounded shadow-xs cursor-pointer"
+              >
+                Close Viewer
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 const LIFECYCLE_STEPS = [
   {
     step: 1,
@@ -495,7 +582,8 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
   const isLockedByMe = Boolean(currentUser?.id && doc.locked_by_user_id === currentUser.id);
 
   return (
-    <div className="fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-xs flex justify-end">
+    <DrawerErrorBoundary onClose={onClose}>
+      <div className="fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-xs flex justify-end">
       <div className="bg-white border-l border-slate-200 w-full max-w-6xl h-full flex flex-col md:flex-row shadow-2xl overflow-hidden">
         
         {/* Left Panel: Live Uploaded File Viewer & Part 11 Certificate */}
@@ -528,7 +616,7 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                     title={isLocked ? `Locked by ${doc.locked_by_user_name || 'Reviewer'}` : "Lock document against concurrent modifications"}
                   >
                     {isLocked ? <Lock className="w-3.5 h-3.5 text-amber-700" /> : <Unlock className="w-3.5 h-3.5 text-slate-500" />}
-                    <span>{isLocked ? `Locked (${doc.locked_by_user_name?.split(' ')[0] || 'User'})` : 'Lock Doc'}</span>
+                    <span>{isLocked ? `Locked (${typeof doc.locked_by_user_name === 'string' ? doc.locked_by_user_name.split(' ')[0] : 'User'})` : 'Lock Doc'}</span>
                   </button>
                 ) : isLocked ? (
                   <span className="flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-medium bg-amber-50 text-amber-800 border border-amber-200">
@@ -826,24 +914,24 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                     <div className="bg-white p-2 rounded border border-emerald-200">
                       <span className="font-bold text-slate-700 block">Gate 1: Author / Uploader</span>
                       <span className="text-slate-600">User: {doc.uploaded_by_name || 'Site User'} ({doc.uploaded_by_id || 'Uploader'})</span>
-                      <span className="text-slate-500 block">Uploaded: {doc.upload_date_time || doc.filing_date}</span>
+                      <span className="text-slate-500 block">Uploaded: {safeFormatDateTime(doc.upload_date_time || doc.filing_date)}</span>
                     </div>
 
-                    {(doc.qc_status === 'Passed' || doc.qc_review_date_time) && (
+                    {(doc.qc_status === 'Passed' || doc.qc_review_date_time || doc.qc_review_timestamp) && (
                       <div className="bg-white p-2 rounded border border-emerald-200">
                         <span className="font-bold text-slate-700 block">Gate 2: QC Reviewer Pass</span>
                         <span className="text-slate-600">Reviewer: {doc.qc_reviewer_name || 'Document Controller'}</span>
-                        <span className="text-slate-500 block">Timestamp: {doc.qc_review_date_time || doc.qc_review_date}</span>
-                        {doc.qc_signature && <span className="text-emerald-700 font-bold block">Signature: {doc.qc_signature}</span>}
+                        <span className="text-slate-500 block">Timestamp: {safeFormatDateTime(doc.qc_review_date_time || doc.qc_review_date || doc.qc_review_timestamp)}</span>
+                        {doc.qc_signature && <span className="text-emerald-700 font-bold block">Signature: {typeof doc.qc_signature === 'string' ? doc.qc_signature : (doc.qc_signature?.signature_hash || 'eSig-QC-Verified')}</span>}
                       </div>
                     )}
 
-                    {(doc.content_review_status === 'Passed' || doc.content_review_date_time) && (
+                    {(doc.content_review_status === 'Passed' || doc.content_review_date_time || doc.content_review_timestamp) && (
                       <div className="bg-white p-2 rounded border border-emerald-200">
                         <span className="font-bold text-slate-700 block">Gate 3: Content Review Sign-Off</span>
                         <span className="text-slate-600">Reviewer: {doc.content_reviewer_name || 'TMF Lead'}</span>
-                        <span className="text-slate-500 block">Timestamp: {doc.content_review_date_time || doc.content_review_date}</span>
-                        {doc.content_review_signature && <span className="text-indigo-700 font-bold block">Signature: {doc.content_review_signature}</span>}
+                        <span className="text-slate-500 block">Timestamp: {safeFormatDateTime(doc.content_review_date_time || doc.content_review_date || doc.content_review_timestamp)}</span>
+                        {doc.content_review_signature && <span className="text-indigo-700 font-bold block">Signature: {typeof doc.content_review_signature === 'string' ? doc.content_review_signature : (doc.content_review_signature?.signature_hash || 'eSig-Review-Signed')}</span>}
                       </div>
                     )}
 
@@ -851,8 +939,8 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                       <div className="bg-white p-2 rounded border border-emerald-200">
                         <span className="font-bold text-slate-700 block">Gate 4: Final Admin Approval</span>
                         <span className="text-slate-600">Approver: {doc.approver_name || 'System Administrator'} ({doc.approver_role || 'System Administrator'})</span>
-                        <span className="text-slate-500 block">Timestamp: {doc.approval_date_time || doc.effective_date}</span>
-                        <span className="text-emerald-700 font-bold block">Manifest: {doc.approval_signature || 'eSig-FINAL-Admin'}</span>
+                        <span className="text-slate-500 block">Timestamp: {safeFormatDateTime(doc.approval_date_time || doc.effective_date || doc.approval_timestamp)}</span>
+                        <span className="text-emerald-700 font-bold block">Manifest: {typeof doc.approval_signature === 'string' ? doc.approval_signature : (doc.signature_manifest?.signature_hash || 'eSig-FINAL-Admin')}</span>
                       </div>
                     )}
                   </div>
@@ -1031,13 +1119,13 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                       {(doc.qc_review_date_time || doc.qc_review_timestamp) && (
                         <div className="flex items-center justify-between">
                           <span className="text-slate-500">Timestamp:</span>
-                          <span className="font-mono text-slate-700">{doc.qc_review_date_time || new Date(doc.qc_review_timestamp).toLocaleString('en-GB')}</span>
+                          <span className="font-mono text-slate-700">{doc.qc_review_date_time || safeFormatDateTime(doc.qc_review_timestamp)}</span>
                         </div>
                       )}
                       {doc.qc_signature && (
                         <div className="flex items-center justify-between border-t border-emerald-200/60 pt-0.5 mt-0.5">
                           <span className="text-slate-500">eSignature:</span>
-                          <span className="font-mono text-emerald-700 font-bold">{doc.qc_signature}</span>
+                          <span className="font-mono text-emerald-700 font-bold">{typeof doc.qc_signature === 'string' ? doc.qc_signature : (doc.qc_signature?.signature_hash || 'eSig-QC-Verified')}</span>
                         </div>
                       )}
                     </div>
@@ -1110,13 +1198,13 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                       {(doc.content_review_date_time || doc.content_review_timestamp) && (
                         <div className="flex items-center justify-between">
                           <span className="text-slate-500">Timestamp:</span>
-                          <span className="font-mono text-slate-700">{doc.content_review_date_time || new Date(doc.content_review_timestamp).toLocaleString('en-GB')}</span>
+                          <span className="font-mono text-slate-700">{doc.content_review_date_time || safeFormatDateTime(doc.content_review_timestamp)}</span>
                         </div>
                       )}
                       {doc.content_review_signature && (
                         <div className="flex items-center justify-between border-t border-indigo-200/60 pt-0.5 mt-0.5">
                           <span className="text-slate-500">eSignature:</span>
-                          <span className="font-mono text-indigo-700 font-bold">{doc.content_review_signature}</span>
+                          <span className="font-mono text-indigo-700 font-bold">{typeof doc.content_review_signature === 'string' ? doc.content_review_signature : (doc.content_review_signature?.signature_hash || 'eSig-Review-Signed')}</span>
                         </div>
                       )}
                     </div>
@@ -1177,13 +1265,13 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                       {(doc.approval_date_time || doc.approval_timestamp) && (
                         <div className="flex items-center justify-between">
                           <span className="text-slate-500">Timestamp:</span>
-                          <span className="font-mono text-slate-700">{doc.approval_date_time || new Date(doc.approval_timestamp).toLocaleString('en-GB')}</span>
+                          <span className="font-mono text-slate-700">{doc.approval_date_time || safeFormatDateTime(doc.approval_timestamp)}</span>
                         </div>
                       )}
                       {(doc.approval_signature || doc.signature_manifest) && (
                         <div className="flex items-center justify-between border-t border-emerald-200/60 pt-0.5 mt-0.5">
                           <span className="text-slate-500">eSignature:</span>
-                          <span className="font-mono text-emerald-700 font-bold">{doc.approval_signature || 'eSig-FINAL-Admin'}</span>
+                          <span className="font-mono text-emerald-700 font-bold">{typeof doc.approval_signature === 'string' ? doc.approval_signature : (doc.signature_manifest?.signature_hash || 'eSig-FINAL-Admin')}</span>
                         </div>
                       )}
                     </div>
@@ -1341,7 +1429,7 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                           "{a.comment}"
                         </p>
                         <p className="text-[10px] text-slate-400 font-mono">
-                          By: {a.author_name} ({a.author_role}) on {a.date?.split('T')[0]}
+                          By: {a.author_name} ({a.author_role}) on {safeFormatDate(a.date)}
                         </p>
 
                         {/* Resolution details if resolved */}
@@ -1521,7 +1609,7 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                             <div className="mt-1.5 p-2 bg-white/80 rounded border border-slate-200 text-[10px] space-y-0.5 font-mono">
                               <p className="text-slate-700 font-semibold">{historyRecord.status}</p>
                               <p className="text-slate-500 text-[9px]">By: {historyRecord.actor_name} ({historyRecord.actor_role})</p>
-                              <p className="text-slate-400 text-[9px]">{historyRecord.timestamp?.split('T')[0]} {historyRecord.timestamp?.split('T')[1]?.substring(0, 5)}</p>
+                              <p className="text-slate-400 text-[9px]">{safeFormatDateTime(historyRecord.timestamp)}</p>
                               {historyRecord.notes && (
                                 <p className="text-slate-600 font-sans italic text-[10px]">Note: {historyRecord.notes}</p>
                               )}
@@ -1696,7 +1784,7 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                     <div className="flex items-center justify-between border-b border-slate-200 pb-2">
                       <div>
                         <p className="font-bold text-slate-900">Version {doc.version_number} (Current)</p>
-                        <p className="text-[10px] text-slate-500">{doc.upload_date_time?.split('T')[0]} by {doc.uploaded_by_name}</p>
+                        <p className="text-[10px] text-slate-500">{safeFormatDate(doc.upload_date_time)} by {doc.uploaded_by_name}</p>
                       </div>
                       <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold border ${
                         doc.status === 'Effective' ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-blue-100 text-blue-800 border-blue-300'
@@ -1723,7 +1811,7 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                       onClick={() => setIsVersionModalOpen(true)}
                       className="w-full py-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white font-semibold flex items-center justify-center gap-1.5 shadow-xs cursor-pointer text-xs"
                     >
-                      <History className="w-3.5 h-3.5" /> Author New Version (v{parseFloat(doc.version_number || '1.0') + 1}.0)
+                      <History className="w-3.5 h-3.5" /> Author New Version (v{(!isNaN(parseFloat(doc.version_number)) ? (parseFloat(doc.version_number) + 1).toFixed(1) : '2.0')})
                     </button>
                   )}
                 </div>
@@ -1824,7 +1912,7 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                       <div key={log.id} className="bg-slate-50 p-2.5 rounded-lg border border-slate-200 text-[11px] space-y-1">
                         <div className="flex items-center justify-between text-blue-700 font-bold">
                           <span>{log.action}</span>
-                          <span className="text-[10px] text-slate-400 font-mono">{log.timestamp?.split('T')[0]}</span>
+                          <span className="text-[10px] text-slate-400 font-mono">{safeFormatDate(log.timestamp)}</span>
                         </div>
                         <p className="text-slate-700">By: {log.user_name} ({log.user_role})</p>
                         <p className="text-slate-500 font-mono text-[10px]">Reason: {log.reason}</p>
@@ -1843,7 +1931,7 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                     <div key={c.id} className="bg-slate-50 p-2.5 rounded-lg border border-slate-200 text-[11px]">
                       <div className="flex justify-between font-semibold text-blue-700 mb-1">
                         <span>{c.user}</span>
-                        <span className="text-[10px] text-slate-400">{c.date}</span>
+                        <span className="text-[10px] text-slate-400">{safeFormatDate(c.date)}</span>
                       </div>
                       <p className="text-slate-800">{c.text}</p>
                     </div>
@@ -1885,5 +1973,6 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
         <NewVersionModal doc={doc} onClose={() => setIsVersionModalOpen(false)} />
       )}
     </div>
+  </DrawerErrorBoundary>
   );
 }
