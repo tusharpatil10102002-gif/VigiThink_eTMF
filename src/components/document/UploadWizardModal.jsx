@@ -113,12 +113,17 @@ export default function UploadWizardModal({
   const [regulatoryBinding, setRegulatoryBinding] = useState(true);
   const [confidentiality, setConfidentiality] = useState("Restricted");
 
+  const [workflowAction, setWorkflowAction] = useState('Submit for QC Review');
+  const [submissionNotes, setSubmissionNotes] = useState('');
+
   // Reviewer Assignment & Submission Routing
-  // Priority: Document Controller -> TMF Lead -> System Administrator fallback
-  const rawReviewers = (usersList.length > 0 ? usersList : [
-    { id: 'usr_doc_ctrl', name: 'Document Controller', position: 'Document Controller', roleId: 'doc_controller' },
-    { id: 'usr_sukriti_mentor', name: 'Sukriti Singh', position: 'TMF Manager / TMF Lead', roleId: 'tmf_manager' },
-    { id: 'usr_tushar_admin', name: 'Tushar Patil', position: 'System Administrator', roleId: 'system_admin' }
+  // Ensure full user roster with designations and departments is loaded
+  const rawReviewers = (usersList && usersList.length > 0 ? usersList : [
+    { id: 'usr_somesh', name: 'Somesh Patidar', position: 'Document Controller', title: 'Document Controller', department: 'TMF Document Management', roleId: 'doc_controller' },
+    { id: 'usr_sukriti_mentor', name: 'Sukriti Singh', position: 'TMF Lead / Manager', title: 'TMF Lead / Manager', department: 'Clinical Quality', roleId: 'tmf_manager' },
+    { id: 'usr_shweta', name: 'Shweta Pagare', position: 'Clinical Research Associate (CRA)', title: 'CRA', department: 'Clinical Monitoring', roleId: 'cra' },
+    { id: 'usr_shubham', name: 'Shubham Sharnagat', position: 'Clinical Trial Manager (CTM)', title: 'CTM', department: 'Clinical Operations', roleId: 'ctm' },
+    { id: 'usr_tushar_admin', name: 'Tushar Patil', position: 'System Administrator', title: 'System Administrator', department: 'Information Technology', roleId: 'system_admin' }
   ]);
 
   // Segregation of Duties (Maker-Checker / ICH GCP E6.5.1):
@@ -126,20 +131,53 @@ export default function UploadWizardModal({
   const isUserSelf = (u) => Boolean(
     (u?.id && currentUser?.id && u.id === currentUser.id) ||
     (u?.email && currentUser?.email && u.email.toLowerCase() === currentUser.email.toLowerCase()) ||
+    (u?.loginId && currentUser?.loginId && u.loginId.toLowerCase() === currentUser.loginId.toLowerCase()) ||
     (u?.name && currentUser?.name && u.name.trim().toLowerCase() === currentUser.name.trim().toLowerCase())
   );
 
-  const eligibleReviewers = rawReviewers.filter(u => !isUserSelf(u));
+  // Filter reviewers strictly based on the selected workflow action & qualification
+  const getEligibleReviewersForAction = (action) => {
+    let rolesAllowed = [];
+    if (action === 'Submit for QC Review') {
+      // Quality Control review under SOP-TMF-04 is strictly performed by Document Controller
+      rolesAllowed = ['doc_controller'];
+    } else if (action === 'Submit for Pre-Review') {
+      // Content / Pre-review is performed by CRA, CTM, or TMF Lead
+      rolesAllowed = ['cra', 'ctm', 'tmf_manager'];
+    } else {
+      // Draft / Internal authoring
+      rolesAllowed = ['site_user', 'cra', 'doc_controller', 'system_admin'];
+    }
 
-  // If no Document Controller exists, fallback to Admin or TMF Lead so workflow never stops
-  const defaultReviewer = eligibleReviewers.find(u => u.roleId === 'doc_controller') ||
-                          eligibleReviewers.find(u => u.roleId === 'tmf_manager') ||
-                          eligibleReviewers.find(u => u.roleId === 'system_admin') ||
-                          eligibleReviewers[0];
+    let candidates = rawReviewers.filter(u => rolesAllowed.includes(u.roleId));
+    
+    // If no candidate exists in the system with this exact role, fallback to Admin and TMF Lead
+    if (candidates.length === 0) {
+      candidates = rawReviewers.filter(u => u.roleId === 'system_admin' || u.roleId === 'tmf_manager');
+    }
+
+    return candidates;
+  };
+
+  const currentActionReviewers = getEligibleReviewersForAction(workflowAction);
+  const eligibleNonSelf = currentActionReviewers.filter(u => !isUserSelf(u));
+  const defaultReviewer = eligibleNonSelf.length > 0
+    ? eligibleNonSelf[0]
+    : (rawReviewers.find(u => u.roleId === 'system_admin' && !isUserSelf(u)) || rawReviewers.find(u => !isUserSelf(u)) || currentActionReviewers[0]);
 
   const [assignedReviewerId, setAssignedReviewerId] = useState(defaultReviewer?.id || '');
-  const [workflowAction, setWorkflowAction] = useState('Submit for QC Review');
-  const [submissionNotes, setSubmissionNotes] = useState('');
+
+  const handleWorkflowActionSelect = (actId) => {
+    setWorkflowAction(actId);
+    const updatedCandidates = getEligibleReviewersForAction(actId);
+    const updatedNonSelf = updatedCandidates.filter(u => !isUserSelf(u));
+    const nextReviewer = updatedNonSelf.length > 0
+      ? updatedNonSelf[0]
+      : (rawReviewers.find(u => u.roleId === 'system_admin' && !isUserSelf(u)) || rawReviewers.find(u => !isUserSelf(u)) || updatedCandidates[0]);
+    if (nextReviewer) {
+      setAssignedReviewerId(nextReviewer.id);
+    }
+  };
 
   const currentZoneObj = DIA_TMF_ZONES.find(z => z.id === selectedZone);
   const availableSections = currentZoneObj?.sections || [];
@@ -176,12 +214,21 @@ export default function UploadWizardModal({
 
   const handleFinishUpload = async () => {
     const artifactObj = availableArtifacts.find(a => a.id === selectedArtifact);
-    const chosenReviewer = eligibleReviewers.find(u => u.id === assignedReviewerId) || defaultReviewer;
+    const chosenReviewer = rawReviewers.find(u => u.id === assignedReviewerId) || defaultReviewer;
 
-    if (!chosenReviewer || isUserSelf(chosenReviewer) || assignedReviewerId === currentUser?.id) {
+    const isDraft = workflowAction === 'Save as Draft';
+    const isPreReview = workflowAction === 'Submit for Pre-Review';
+    const isQc = workflowAction === 'Submit for QC Review';
+
+    if (!isDraft && (!chosenReviewer || isUserSelf(chosenReviewer) || assignedReviewerId === currentUser?.id)) {
       alert("Segregation of Duties Violation: You cannot assign yourself as the reviewer for a document you are uploading (ICH GCP E6 / Four-Eyes Principle). Please choose an independent reviewer.");
       return;
     }
+
+    const stageNum = isDraft ? 1 : (isPreReview ? 2 : 5);
+    const stageName = isDraft ? '1. Document Creation' : (isPreReview ? '2. Document Review' : '5. Metadata Entry');
+    const docStatus = isDraft ? 'Draft' : (isPreReview ? 'In Review' : 'Submitted');
+    const qcStatus = isQc ? 'In Progress' : 'Not Started';
 
     const folderPathStr = defaultCustomFolder
       ? `Study > Zone ${selectedZone} > ${defaultCustomFolder}`
@@ -213,16 +260,18 @@ export default function UploadWizardModal({
       file_format: file ? file.name.split('.').pop().toUpperCase() : "PDF",
       file_size: file ? `${(file.size / 1024 / 1024).toFixed(2)} MB` : "1.5 MB",
       // Reviewer Assignment & Submission Routing
-      assigned_reviewer_id: chosenReviewer?.id || 'usr_tushar_admin',
-      assigned_reviewer_name: chosenReviewer?.position ? `${chosenReviewer.name} (${chosenReviewer.position})` : chosenReviewer?.name || 'System Administrator',
-      assigned_reviewer_role: chosenReviewer?.roleId || 'system_admin',
-      assigned_qc_reviewer_id: chosenReviewer?.id || 'usr_tushar_admin',
-      assigned_qc_reviewer_name: chosenReviewer?.name || 'System Administrator',
-      assigned_qc_reviewer_role: chosenReviewer?.roleId || 'system_admin',
+      assigned_reviewer_id: chosenReviewer?.id || 'usr_somesh',
+      assigned_reviewer_name: chosenReviewer?.position ? `${chosenReviewer.name} (${chosenReviewer.position})` : chosenReviewer?.name || 'Somesh Patidar (Document Controller)',
+      assigned_reviewer_role: chosenReviewer?.roleId || 'doc_controller',
+      assigned_qc_reviewer_id: isQc ? (chosenReviewer?.id || 'usr_somesh') : null,
+      assigned_qc_reviewer_name: isQc ? (chosenReviewer?.name || 'Somesh Patidar') : null,
+      assigned_qc_reviewer_role: isQc ? (chosenReviewer?.roleId || 'doc_controller') : null,
       submission_notes: submissionNotes,
       workflow_action: workflowAction,
-      lifecycle_stage: 3,
-      lifecycle_stage_name: 'Quality Control (QC)',
+      lifecycle_stage: stageNum,
+      lifecycle_stage_name: stageName,
+      status: docStatus,
+      qc_status: qcStatus,
       submitted_by_id: currentUser?.id,
       submitted_by_name: currentUser?.name,
       submitted_by_role: currentUser?.roleId,
@@ -511,7 +560,7 @@ export default function UploadWizardModal({
                   Reviewer Selection &amp; Transmittal Routing
                 </div>
                 <p className="text-[11px] text-slate-600">
-                  Select the designated person responsible for inspecting and approving this clinical document under SOP-TMF-04.
+                  Select the target workflow gate and designated personnel responsible for inspecting and approving this clinical document under SOP-TMF-04 and 21 CFR Part 11.
                 </p>
               </div>
 
@@ -521,94 +570,162 @@ export default function UploadWizardModal({
                 <div className="text-[11px] leading-tight">
                   <span className="font-bold">Segregation of Duties (ICH GCP E6.5.1 / Four-Eyes Principle):</span>
                   <p className="text-amber-800 text-[10.5px] mt-0.5">
-                    As the document author/uploader (<strong>{currentUser?.name}</strong>), you are prohibited from assigning yourself as the QC reviewer or approver. An independent peer reviewer or TMF Lead must be selected.
+                    As the document author/uploader (<strong>{currentUser?.name}</strong>), you cannot assign yourself as the QC reviewer or approver. An independent qualified reviewer must be selected.
                   </p>
                 </div>
               </div>
 
-              {/* 1. Reviewer Selection (Kiske pass jayenga) */}
+              {/* 1. Workflow Submission Action Gate */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="block text-slate-800 font-bold">1. Workflow Action Gate *</label>
+                  <span className="text-[10px] text-slate-500">Document Intake Routing</span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                  {[
+                    { 
+                      id: 'Submit for QC Review', 
+                      label: 'Submit for QC Review', 
+                      roleTag: 'Document Controller',
+                      desc: 'Gate 2: Document Controller Quality Control & ALCOA+ inspection (SOP-TMF-04)' 
+                    },
+                    { 
+                      id: 'Submit for Pre-Review', 
+                      label: 'Submit for CRA Review', 
+                      roleTag: 'CRA / Monitoring',
+                      desc: 'Stage 2: Monitoring visit verification & clinical content review' 
+                    },
+                    { 
+                      id: 'Save as Draft', 
+                      label: 'Save as Working Draft', 
+                      roleTag: 'Site Author',
+                      desc: 'Stage 1: Document drafting in progress, pending final QC submission' 
+                    }
+                  ].map(act => (
+                    <label
+                      key={act.id}
+                      onClick={() => handleWorkflowActionSelect(act.id)}
+                      className={`p-2.5 rounded-lg border cursor-pointer transition-all block ${
+                        workflowAction === act.id
+                          ? 'bg-blue-50/90 border-blue-500 ring-2 ring-blue-200 shadow-xs'
+                          : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between font-bold text-xs text-slate-900">
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="radio"
+                            name="workflowAction"
+                            checked={workflowAction === act.id}
+                            onChange={() => handleWorkflowActionSelect(act.id)}
+                            className="accent-blue-600"
+                          />
+                          <span>{act.label}</span>
+                        </div>
+                        <span className="text-[9px] px-1.5 py-0.2 rounded bg-slate-200 text-slate-700 font-mono">
+                          {act.roleTag}
+                        </span>
+                      </div>
+                      <p className="text-[10.5px] text-slate-500 mt-1 pl-4 leading-snug">{act.desc}</p>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* 2. Reviewer Selection (Dynamically filtered by role) */}
               <div className="space-y-1.5">
                 <label className="block text-slate-800 font-bold flex items-center justify-between">
-                  <span>Designated QC Reviewer / Approver *</span>
-                  <span className="text-[10px] text-blue-600 font-normal">SOP-TMF-04 Inspection Gate</span>
+                  <span>
+                    {workflowAction === 'Submit for QC Review'
+                      ? '2. Designated Document Controller (QC Reviewer) *'
+                      : workflowAction === 'Submit for Pre-Review'
+                      ? '2. Designated CRA / Content Reviewer *'
+                      : '2. Document Custodian / Draft Author'}
+                  </span>
+                  <span className="text-[10px] text-blue-600 font-normal">
+                    {workflowAction === 'Submit for QC Review'
+                      ? 'SOP-TMF-04 Quality Control Gate'
+                      : workflowAction === 'Submit for Pre-Review'
+                      ? 'Monitoring Content Gate'
+                      : 'Draft Stage'}
+                  </span>
                 </label>
+                <p className="text-[10.5px] text-slate-500">
+                  {workflowAction === 'Submit for QC Review'
+                    ? 'Only personnel with the Document Controller role can be designated to conduct ALCOA+ QC clearance.'
+                    : workflowAction === 'Submit for Pre-Review'
+                    ? 'Personnel with CRA, CTM, or TMF Lead qualifications can conduct pre-QC content verification.'
+                    : 'Designate the site staff custodian responsible for completing this draft record.'}
+                </p>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  {rawReviewers.map(rev => {
+                  {currentActionReviewers.map(rev => {
                     const isSelf = isUserSelf(rev);
                     const isSelected = assignedReviewerId === rev.id;
+                    const displayPosition = rev.position || rev.title || (
+                      rev.roleId === 'doc_controller' ? 'Document Controller' :
+                      rev.roleId === 'system_admin' ? 'System Administrator' :
+                      rev.roleId === 'tmf_manager' ? 'TMF Manager / Lead' :
+                      rev.roleId === 'cra' ? 'Clinical Research Associate' :
+                      rev.roleId
+                    );
+                    const displayDept = rev.department || (
+                      rev.roleId === 'doc_controller' ? 'TMF Document Management' :
+                      rev.roleId === 'system_admin' ? 'IT Governance & System Admin' :
+                      rev.roleId === 'tmf_manager' ? 'Clinical Quality' :
+                      rev.roleId === 'cra' ? 'Clinical Monitoring' :
+                      'Clinical Operations'
+                    );
+
                     return (
                       <div
                         key={rev.id}
                         onClick={() => {
-                          if (isSelf) return; // Self-assignment prohibited
+                          if (isSelf && workflowAction !== 'Save as Draft') return;
                           setAssignedReviewerId(rev.id);
                         }}
                         className={`p-2.5 rounded-lg border transition-all flex items-center justify-between gap-2 ${
-                          isSelf
+                          isSelf && workflowAction !== 'Save as Draft'
                             ? 'bg-slate-100/80 border-slate-200 opacity-60 cursor-not-allowed select-none'
                             : isSelected
-                            ? 'bg-blue-50/80 border-blue-500 ring-2 ring-blue-200 shadow-xs cursor-pointer'
+                            ? 'bg-emerald-50/90 border-emerald-500 ring-2 ring-emerald-200 shadow-xs cursor-pointer'
                             : 'bg-slate-50 hover:bg-slate-100 border-slate-200 cursor-pointer'
                         }`}
-                        title={isSelf ? "Self-assignment prohibited under ICH GCP E6 (Maker-Checker Rule)" : `Assign to ${rev.name}`}
+                        title={isSelf && workflowAction !== 'Save as Draft' ? "Self-assignment prohibited under ICH GCP E6 (Maker-Checker Rule)" : `Assign to ${rev.name}`}
                       >
-                        <div className="min-w-0">
+                        <div className="min-w-0 flex-1">
                           <p className="font-bold text-slate-900 truncate text-xs flex items-center gap-1.5">
                             {rev.name}
                             {isSelf && (
                               <span className="text-[9px] bg-rose-100 text-rose-700 px-1.5 py-0.2 rounded font-semibold uppercase tracking-wider">
-                                You (Self)
+                                You (Author)
                               </span>
                             )}
                           </p>
-                          <p className="text-[10px] text-slate-500 font-mono truncate">{rev.position || rev.title || rev.roleId}</p>
+                          <p className="text-[11px] text-blue-700 font-medium truncate">
+                            {displayPosition}
+                          </p>
+                          <p className="text-[10px] text-slate-500 font-mono truncate">
+                            {displayDept} • Role: {rev.roleId}
+                          </p>
                         </div>
-                        {isSelf ? (
+                        {isSelf && workflowAction !== 'Save as Draft' ? (
                           <span className="text-[9.5px] text-rose-600 font-semibold whitespace-nowrap bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded">
                             Prohibited
                           </span>
                         ) : isSelected ? (
-                          <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0" />
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                         ) : (
                           <span className="w-4 h-4 rounded-full border border-slate-300 shrink-0"></span>
                         )}
                       </div>
                     );
                   })}
-                </div>
-              </div>
-
-              {/* 2. Workflow Submission Action */}
-              <div className="space-y-1.5">
-                <label className="block text-slate-800 font-bold">Workflow Action Gate</label>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                  {[
-                    { id: 'Submit for QC Review', label: 'Submit to QC Queue', desc: 'Stage 6: TMF Lead Quality Clearance' },
-                    { id: 'Submit for Pre-Review', label: 'Submit for CRA Review', desc: 'Stage 2: Monitoring verification' },
-                    { id: 'Save as Draft', label: 'Save Draft Record', desc: 'Stage 5: Pending site completion' }
-                  ].map(act => (
-                    <label
-                      key={act.id}
-                      onClick={() => setWorkflowAction(act.id)}
-                      className={`p-2 rounded-lg border cursor-pointer transition-all block ${
-                        workflowAction === act.id
-                          ? 'bg-emerald-50/80 border-emerald-500 ring-1 ring-emerald-200'
-                          : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
-                      }`}
-                    >
-                      <div className="flex items-center gap-1.5 font-bold text-xs text-slate-900">
-                        <input
-                          type="radio"
-                          name="workflowAction"
-                          checked={workflowAction === act.id}
-                          onChange={() => setWorkflowAction(act.id)}
-                          className="accent-emerald-600"
-                        />
-                        <span>{act.label}</span>
-                      </div>
-                      <p className="text-[10px] text-slate-500 mt-0.5 pl-4">{act.desc}</p>
-                    </label>
-                  ))}
+                  {currentActionReviewers.length === 0 && (
+                    <div className="col-span-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-900 text-xs">
+                      No designated user found with the applicable role. System Administrator will act as authoritative fallback.
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -616,7 +733,7 @@ export default function UploadWizardModal({
               <div className="space-y-1">
                 <label className="block text-slate-800 font-bold flex items-center gap-1">
                   <MessageSquare className="w-3.5 h-3.5 text-blue-600" />
-                  Transmittal Note / Message for Reviewer
+                  3. Transmittal Note / Message for Reviewer
                 </label>
                 <textarea
                   rows={2}
@@ -627,18 +744,24 @@ export default function UploadWizardModal({
                 />
               </div>
 
-              {/* 4. Pre-Submission Verification Card */}
-              <div className="bg-slate-50 p-3.5 rounded-lg border border-slate-200 space-y-1.5 font-mono text-[11px] text-slate-800">
-                <div className="flex justify-between items-center text-slate-900 font-bold border-b border-slate-200 pb-1">
-                  <span>Document Manifest</span>
-                  <span className="text-[10px] px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-semibold">{workflowAction}</span>
-                </div>
-                <p><span className="text-slate-500">Document:</span> <span className="font-bold text-slate-900">{docTitle || (file ? file.name : "Document")}</span></p>
-                <p><span className="text-slate-500">Address:</span> Zone {selectedZone} → Section {selectedSection} → Artifact {selectedArtifact}</p>
-                <p><span className="text-slate-500">Protocol &amp; Site:</span> {selectedStudyId} · {siteId}</p>
-                <p><span className="text-slate-500">Submitted By:</span> <strong className="text-blue-700">{currentUser.name}</strong> ({currentUser.roleId})</p>
-                <p><span className="text-slate-500">Assigned To:</span> <strong className="text-emerald-700">{eligibleReviewers.find(u => u.id === assignedReviewerId)?.name || 'Assigned Reviewer'}</strong> ({eligibleReviewers.find(u => u.id === assignedReviewerId)?.position || eligibleReviewers.find(u => u.id === assignedReviewerId)?.title || 'Reviewer'})</p>
-              </div>
+              {/* 4. Pre-Submission Verification Manifest Card */}
+              {(() => {
+                const assignedUserObj = rawReviewers.find(u => u.id === assignedReviewerId) || defaultReviewer;
+                return (
+                  <div className="bg-slate-50 p-3.5 rounded-lg border border-slate-200 space-y-1.5 font-mono text-[11px] text-slate-800">
+                    <div className="flex justify-between items-center text-slate-900 font-bold border-b border-slate-200 pb-1">
+                      <span>Document Manifest &amp; Routing Verification</span>
+                      <span className="text-[10px] px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-semibold">{workflowAction}</span>
+                    </div>
+                    <p><span className="text-slate-500 font-sans">Document Title:</span> <span className="font-bold text-slate-900">{docTitle || (file ? file.name : "Document")}</span></p>
+                    <p><span className="text-slate-500 font-sans">DIA Classification:</span> Zone {selectedZone} → Section {selectedSection} → Artifact {selectedArtifact}</p>
+                    <p><span className="text-slate-500 font-sans">Protocol &amp; Site Scope:</span> {selectedStudyId} · {siteId}</p>
+                    <p><span className="text-slate-500 font-sans">Submitted By:</span> <strong className="text-blue-700">{currentUser?.name}</strong> ({currentUser?.position || currentUser?.roleId})</p>
+                    <p><span className="text-slate-500 font-sans">Assigned Reviewer:</span> <strong className="text-emerald-700">{assignedUserObj?.name || 'Reviewer'}</strong> — {assignedUserObj?.position || assignedUserObj?.title || 'Reviewer'} ({assignedUserObj?.roleId})</p>
+                    <p><span className="text-slate-500 font-sans">Lifecycle Stage Routing:</span> <span className="font-bold text-indigo-700">{workflowAction === 'Save as Draft' ? 'Stage 1: Document Creation (Draft Record)' : workflowAction === 'Submit for Pre-Review' ? 'Stage 2: Document Review (CRA Pre-Review)' : 'Gate 2: Quality Control (QC Queue for Document Controller)'}</span></p>
+                  </div>
+                );
+              })()}
             </div>
           )}
         </div>
@@ -666,7 +789,12 @@ export default function UploadWizardModal({
               onClick={handleFinishUpload}
               className="px-5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md cursor-pointer flex items-center gap-1.5"
             >
-              <CheckCircle2 className="w-4 h-4" /> Submit to QC Queue
+              <CheckCircle2 className="w-4 h-4" />
+              {workflowAction === 'Save as Draft' 
+                ? 'Save as Working Draft' 
+                : workflowAction === 'Submit for Pre-Review' 
+                ? 'Submit for CRA Review' 
+                : 'Submit for Document Controller QC'}
             </button>
           )}
         </div>

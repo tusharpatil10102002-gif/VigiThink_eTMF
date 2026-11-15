@@ -327,94 +327,112 @@ router.post('/upload', (req, res, next) => {
     let assignedReviewerName = req.body.assigned_reviewer_name;
     let assignedReviewerRole = req.body.assigned_reviewer_role;
 
+    const submissionNotes = req.body.submission_notes || '';
+    const workflowAction = req.body.workflow_action || (isPlaceholder ? 'Placeholder Creation' : 'Submit for QC Review');
+    const isDraft = workflowAction === 'Save as Draft';
+    const isPreReview = workflowAction === 'Submit for Pre-Review';
+    const isQc = workflowAction === 'Submit for QC Review' || (!isPlaceholder && !isDraft && !isPreReview);
+
     if (!assignedReviewerId) {
-      if (uploaderId === 'usr_sukriti_mentor' || uploaderName.includes('sukriti')) {
-        assignedReviewerId = 'usr_gourish';
-        assignedReviewerName = 'Gourish Chouksey (QA / QC Specialist)';
-        assignedReviewerRole = 'qa';
+      if (isPreReview) {
+        assignedReviewerId = 'usr_shweta';
+        assignedReviewerName = 'Shweta Pagare (CRA)';
+        assignedReviewerRole = 'cra';
       } else {
-        assignedReviewerId = 'usr_sukriti_mentor';
-        assignedReviewerName = 'Sukriti Singh (TMF Lead)';
-        assignedReviewerRole = 'tmf_manager';
+        // Document Controller is default for QC Review
+        if (uploaderId === 'usr_somesh' || uploaderName.includes('somesh')) {
+          assignedReviewerId = 'usr_tushar_admin';
+          assignedReviewerName = 'Tushar Patil (System Administrator)';
+          assignedReviewerRole = 'system_admin';
+        } else {
+          assignedReviewerId = 'usr_somesh';
+          assignedReviewerName = 'Somesh Patidar (Document Controller)';
+          assignedReviewerRole = 'doc_controller';
+        }
       }
     }
 
-    const submissionNotes = req.body.submission_notes || '';
-    const workflowAction = req.body.workflow_action || (isPlaceholder ? 'Placeholder Creation' : 'Submit for QC Review');
-
-    const initLifecycleStage = isPlaceholder ? 1 : (isSubmitToQc ? 6 : 5);
-    const initLifecycleName = isPlaceholder ? '1. Document Creation' : (isSubmitToQc ? '6. Quality Control (QC)' : '5. Metadata Entry');
-    const initLifecycleStatus = isPlaceholder ? 'Placeholder Created' : (isSubmitToQc ? `Pending QC Review (${assignedReviewerName})` : 'Metadata Validated - Draft');
+    const initLifecycleStage = isPlaceholder ? 1 : (isDraft ? 1 : (isPreReview ? 2 : 5));
+    const initLifecycleName = isPlaceholder ? '1. Document Creation' : (isDraft ? '1. Document Creation' : (isPreReview ? '2. Document Review' : '5. Metadata Entry'));
+    const initLifecycleStatus = isPlaceholder ? 'Placeholder Created' : (isDraft ? 'Draft in Preparation' : (isPreReview ? 'Under CRA Review' : `Pending Document Controller QC Review (${assignedReviewerName})`));
     const nowIso = new Date().toISOString();
 
-    const initHistory = isPlaceholder ? [
-      {
-        stage_number: 1,
-        stage_name: '1. Document Creation',
-        status: 'Placeholder Created',
-        actor_name: user.name || 'VigiThink User',
-        actor_role: user.roleId || 'site_user',
-        timestamp: nowIso,
-        notes: 'Document placeholder indexed in eTMF awaiting official file.'
-      }
-    ] : [
-      {
-        stage_number: 1,
-        stage_name: '1. Document Creation',
-        status: 'Document Prepared',
-        actor_name: user.name || 'VigiThink User',
-        actor_role: user.roleId || 'site_user',
-        timestamp: nowIso,
-        notes: `Clinical trial document prepared (${req.body.document_title || fileName}).`
-      },
-      {
-        stage_number: 2,
-        stage_name: '2. Document Review',
-        status: 'Content Verified',
-        actor_name: user.name || 'VigiThink User',
-        actor_role: user.roleId || 'site_user',
-        timestamp: nowIso,
-        notes: 'Pre-upload verification & content review completed by responsible investigator/site staff.'
-      },
-      {
-        stage_number: 3,
-        stage_name: '3. Document Signing',
-        status: 'Signatures Collected',
-        actor_name: user.name || 'VigiThink User',
-        actor_role: user.roleId || 'site_user',
-        timestamp: nowIso,
-        notes: 'Required signatures collected on document prior to filing.'
-      },
-      {
-        stage_number: 4,
-        stage_name: '4. Document Upload',
-        status: 'Uploaded to eTMF',
-        actor_name: user.name || 'VigiThink User',
-        actor_role: user.roleId || 'site_user',
-        timestamp: nowIso,
-        notes: `Document uploaded to electronic TMF (SHA-256: ${checksum.substring(0, 12)}...).`
-      },
-      {
-        stage_number: 5,
-        stage_name: '5. Metadata Entry',
-        status: isSubmitToQc ? 'Submitted to QC Review' : 'Metadata Validated',
-        actor_name: user.name || 'VigiThink User',
-        actor_role: user.roleId || 'site_user',
-        timestamp: nowIso,
-        notes: `Metadata entry complete: Study ${req.body.study_id || 'CLIN-001'}, Site ${req.body.site_id || 'SITE-01'}, DIA Artifact ${req.body.tmf_artifact_id || '01.01.01'} (${req.body.tmf_artifact_name || 'Artifact'}). Submitted to ${assignedReviewerName} (${assignedReviewerRole}) for Quality Control clearance.${submissionNotes ? ` Transmittal Note: "${submissionNotes}"` : ''}`
-      }
-    ];
-
-    if (isSubmitToQc && !isPlaceholder) {
-      initHistory.push({
-        stage_number: 6,
-        stage_name: '6. Quality Control (QC)',
-        status: 'Awaiting QC Clearance',
-        actor_name: assignedReviewerName,
-        actor_role: assignedReviewerRole,
-        timestamp: nowIso,
-        notes: `In QC Review Queue awaiting verification by ${assignedReviewerName}.`
-      });
+    let initHistory = [];
+    if (isPlaceholder) {
+      initHistory = [
+        {
+          stage_number: 1,
+          stage_name: '1. Document Creation',
+          status: 'Placeholder Created',
+          actor_name: user.name || 'VigiThink User',
+          actor_role: user.roleId || 'site_user',
+          timestamp: nowIso,
+          notes: 'Document placeholder indexed in eTMF awaiting official file.'
+        }
+      ];
+    } else if (isDraft) {
+      initHistory = [
+        {
+          stage_number: 1,
+          stage_name: '1. Document Creation',
+          status: 'Working Draft Created',
+          actor_name: user.name || 'VigiThink User',
+          actor_role: user.roleId || 'site_user',
+          timestamp: nowIso,
+          notes: `Working draft initialized: ${req.body.document_title || fileName}.`
+        }
+      ];
+    } else if (isPreReview) {
+      initHistory = [
+        {
+          stage_number: 1,
+          stage_name: '1. Document Creation',
+          status: 'Document Prepared',
+          actor_name: user.name || 'VigiThink User',
+          actor_role: user.roleId || 'site_user',
+          timestamp: nowIso,
+          notes: `Trial document prepared and uploaded for monitoring review (${req.body.document_title || fileName}).`
+        },
+        {
+          stage_number: 2,
+          stage_name: '2. Document Review',
+          status: 'Submitted for CRA Review',
+          actor_name: assignedReviewerName,
+          actor_role: assignedReviewerRole,
+          timestamp: nowIso,
+          notes: `Assigned to ${assignedReviewerName} for clinical monitoring review.${submissionNotes ? ` Transmittal Note: "${submissionNotes}"` : ''}`
+        }
+      ];
+    } else {
+      initHistory = [
+        {
+          stage_number: 1,
+          stage_name: '1. Document Creation',
+          status: 'Document Prepared',
+          actor_name: user.name || 'VigiThink User',
+          actor_role: user.roleId || 'site_user',
+          timestamp: nowIso,
+          notes: `Clinical trial document prepared (${req.body.document_title || fileName}).`
+        },
+        {
+          stage_number: 4,
+          stage_name: '4. Document Upload',
+          status: 'Uploaded to eTMF',
+          actor_name: user.name || 'VigiThink User',
+          actor_role: user.roleId || 'site_user',
+          timestamp: nowIso,
+          notes: `Document uploaded to electronic TMF (SHA-256: ${checksum.substring(0, 12)}...).`
+        },
+        {
+          stage_number: 5,
+          stage_name: '5. Metadata Entry',
+          status: 'Submitted to Document Controller QC',
+          actor_name: user.name || 'VigiThink User',
+          actor_role: user.roleId || 'site_user',
+          timestamp: nowIso,
+          notes: `Metadata entry complete: Study ${req.body.study_id || 'CLIN-001'}, Site ${req.body.site_id || 'SITE-01'}, DIA Artifact ${req.body.tmf_artifact_id || '01.01.01'} (${req.body.tmf_artifact_name || 'Artifact'}). Submitted to Document Controller (${assignedReviewerName}) for SOP-TMF-04 Quality Control clearance.${submissionNotes ? ` Transmittal Note: "${submissionNotes}"` : ''}`
+        }
+      ];
     }
 
     const newDoc = new Document({
@@ -430,7 +448,7 @@ router.post('/upload', (req, res, next) => {
       tmf_artifact_id: req.body.tmf_artifact_id || '01.01.01',
       tmf_artifact_name: req.body.tmf_artifact_name || 'Trial Master Oversight Plan',
       version_number: req.body.version_number || (req.body.is_placeholder === 'true' ? '0.0' : '0.1'),
-      status: req.body.is_placeholder === 'true' ? 'Placeholder' : (req.body.is_draft === 'true' || req.body.status === 'Draft' ? 'Draft' : (req.body.status || 'Submitted')),
+      status: req.body.is_placeholder === 'true' ? 'Placeholder' : (isDraft ? 'Draft' : (isPreReview ? 'In Review' : (req.body.status || 'Submitted'))),
       lifecycle_stage: initLifecycleStage,
       lifecycle_stage_name: initLifecycleName,
       lifecycle_status: initLifecycleStatus,
@@ -448,7 +466,7 @@ router.post('/upload', (req, res, next) => {
       is_placeholder: req.body.is_placeholder === 'true' || false,
       is_certified_copy: req.body.is_certified_copy === 'true' || false,
       source_type: req.body.source_type || 'Electronic Native',
-      qc_status: req.body.is_placeholder === 'true' ? 'Not Started' : 'In Progress',
+      qc_status: (req.body.is_placeholder === 'true' || isDraft || isPreReview) ? 'Not Started' : 'In Progress',
       qc_score: req.body.is_placeholder === 'true' ? 'Red' : 'Amber',
       checksum_hash: checksum,
       file_name: fileName,

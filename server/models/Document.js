@@ -63,9 +63,9 @@ const DocumentSchema = new mongoose.Schema({
 
   // Workflow Submission & Review Routing
   workflow_type: { type: String, default: 'Standard Trial Document' },
-  assigned_reviewer_id: { type: String, default: 'usr_sukriti_mentor', index: true },
-  assigned_reviewer_name: { type: String, default: 'Sukriti Singh (TMF Lead)' },
-  assigned_reviewer_role: { type: String, default: 'tmf_manager' },
+  assigned_reviewer_id: { type: String, default: 'usr_somesh', index: true },
+  assigned_reviewer_name: { type: String, default: 'Somesh Patidar (Document Controller)' },
+  assigned_reviewer_role: { type: String, default: 'doc_controller' },
   submitted_by_id: { type: String, default: null },
   submitted_by_name: { type: String, default: null },
   submitted_by_role: { type: String, default: null },
