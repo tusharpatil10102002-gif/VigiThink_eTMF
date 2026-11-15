@@ -77,12 +77,35 @@ export default function UploadWizardModal({
   
   // Metadata fields initialized to current folder/zone
   const [selectedZone, setSelectedZone] = useState(initialZone);
+  // Extract admin-configured sites strictly from active study hierarchy
+  const adminConfiguredSites = [];
+  if (Array.isArray(activeStudy?.sites)) {
+    activeStudy.sites.forEach(s => adminConfiguredSites.push(s));
+  }
+  if (Array.isArray(activeStudy?.countries)) {
+    activeStudy.countries.forEach(c => {
+      if (Array.isArray(c.sites)) {
+        c.sites.forEach(s => {
+          if (!adminConfiguredSites.some(existing => existing.id === s.id || (existing.number && existing.number === s.number))) {
+            adminConfiguredSites.push(s);
+          }
+        });
+      }
+    });
+  }
+
+  const initialSite = defaultSite || (
+    currentUser?.siteScope && currentUser.siteScope !== 'ALL'
+      ? currentUser.siteScope
+      : (adminConfiguredSites.length > 0 ? (adminConfiguredSites[0].id || adminConfiguredSites[0].number) : 'GLOBAL')
+  );
+
   const [selectedSection, setSelectedSection] = useState(initialSection);
   const [selectedArtifact, setSelectedArtifact] = useState(initialArtifact);
   const [docTitle, setDocTitle] = useState("");
   const [docType, setDocType] = useState("Trial Document");
-  const [countryCode, setCountryCode] = useState("India");
-  const [siteId, setSiteId] = useState(defaultSite || (currentUser?.siteScope && currentUser.siteScope !== 'ALL' ? currentUser.siteScope : "Site 001 - AIIMS RPC Eye Centre, New Delhi"));
+  const [countryCode, setCountryCode] = useState((activeStudy?.countries && activeStudy.countries.length > 0) ? activeStudy.countries[0].name : "India");
+  const [siteId, setSiteId] = useState(initialSite);
   const [docDate, setDocDate] = useState(new Date().toISOString().split('T')[0]);
   const [isCertifiedCopy, setIsCertifiedCopy] = useState(true);
   const [sourceType, setSourceType] = useState("Certified Copy");
@@ -91,12 +114,10 @@ export default function UploadWizardModal({
   const [confidentiality, setConfidentiality] = useState("Restricted");
 
   // Reviewer Assignment & Submission Routing
+  // Priority: Document Controller -> TMF Lead -> System Administrator fallback
   const rawReviewers = (usersList.length > 0 ? usersList : [
+    { id: 'usr_doc_ctrl', name: 'Document Controller', position: 'Document Controller', roleId: 'doc_controller' },
     { id: 'usr_sukriti_mentor', name: 'Sukriti Singh', position: 'TMF Manager / TMF Lead', roleId: 'tmf_manager' },
-    { id: 'usr_gourish', name: 'Gourish Chouksey', position: 'QA / QC Specialist', roleId: 'qa' },
-    { id: 'usr_shubham', name: 'Shubham Sharnagat', position: 'Clinical Trial Manager (CTM)', roleId: 'ctm' },
-    { id: 'usr_shweta', name: 'Shweta Pagare', position: 'Clinical Research Associate (CRA)', roleId: 'cra' },
-    { id: 'usr_mary', name: 'Mary Vismaya', position: 'Associate TMF Specialist', roleId: 'tmf_lead_trainee' },
     { id: 'usr_tushar_admin', name: 'Tushar Patil', position: 'System Administrator', roleId: 'system_admin' }
   ]);
 
@@ -110,9 +131,10 @@ export default function UploadWizardModal({
 
   const eligibleReviewers = rawReviewers.filter(u => !isUserSelf(u));
 
-  const defaultReviewer = eligibleReviewers.find(u => u.roleId === 'tmf_manager') || 
-                          eligibleReviewers.find(u => u.roleId === 'qa') ||
-                          eligibleReviewers.find(u => u.roleId === 'ctm') ||
+  // If no Document Controller exists, fallback to Admin or TMF Lead so workflow never stops
+  const defaultReviewer = eligibleReviewers.find(u => u.roleId === 'doc_controller') ||
+                          eligibleReviewers.find(u => u.roleId === 'tmf_manager') ||
+                          eligibleReviewers.find(u => u.roleId === 'system_admin') ||
                           eligibleReviewers[0];
 
   const [assignedReviewerId, setAssignedReviewerId] = useState(defaultReviewer?.id || '');
@@ -191,14 +213,19 @@ export default function UploadWizardModal({
       file_format: file ? file.name.split('.').pop().toUpperCase() : "PDF",
       file_size: file ? `${(file.size / 1024 / 1024).toFixed(2)} MB` : "1.5 MB",
       // Reviewer Assignment & Submission Routing
-      assigned_reviewer_id: chosenReviewer?.id || 'usr_sukriti_mentor',
-      assigned_reviewer_name: chosenReviewer?.position ? `${chosenReviewer.name} (${chosenReviewer.position})` : chosenReviewer?.name || 'TMF Lead',
-      assigned_reviewer_role: chosenReviewer?.roleId || 'tmf_manager',
+      assigned_reviewer_id: chosenReviewer?.id || 'usr_tushar_admin',
+      assigned_reviewer_name: chosenReviewer?.position ? `${chosenReviewer.name} (${chosenReviewer.position})` : chosenReviewer?.name || 'System Administrator',
+      assigned_reviewer_role: chosenReviewer?.roleId || 'system_admin',
+      assigned_qc_reviewer_id: chosenReviewer?.id || 'usr_tushar_admin',
+      assigned_qc_reviewer_name: chosenReviewer?.name || 'System Administrator',
+      assigned_qc_reviewer_role: chosenReviewer?.roleId || 'system_admin',
       submission_notes: submissionNotes,
       workflow_action: workflowAction,
-      submitted_by_id: currentUser.id,
-      submitted_by_name: currentUser.name,
-      submitted_by_role: currentUser.roleId,
+      lifecycle_stage: 3,
+      lifecycle_stage_name: 'Quality Control (QC)',
+      submitted_by_id: currentUser?.id,
+      submitted_by_name: currentUser?.name,
+      submitted_by_role: currentUser?.roleId,
       submitted_date: new Date().toISOString()
     }, currentUser, file);
 
@@ -375,8 +402,17 @@ export default function UploadWizardModal({
                     className="w-full bg-slate-50 border border-slate-300 rounded-lg px-2 py-1.5 text-slate-900 shadow-xs"
                   >
                     <option value="GLOBAL">Global</option>
-                    <option value="IND">India (IND)</option>
-                    <option value="USA">United States (USA)</option>
+                    {(activeStudy?.countries || []).map((c) => (
+                      <option key={c.code || c.name} value={c.name || c.code}>
+                        {c.name} ({c.code || 'CTRY'})
+                      </option>
+                    ))}
+                    {(!activeStudy?.countries || activeStudy.countries.length === 0) && (
+                      <>
+                        <option value="India">India (IND)</option>
+                        <option value="United States">United States (USA)</option>
+                      </>
+                    )}
                   </select>
                 </div>
 
@@ -395,13 +431,15 @@ export default function UploadWizardModal({
                       onChange={(e) => setSiteId(e.target.value)}
                       className="w-full bg-slate-50 border border-slate-300 rounded-lg px-2 py-1.5 text-slate-900 shadow-xs"
                     >
-                      <option value="GLOBAL">Global / Study Level</option>
-                      <option value="Site 001 - AIIMS RPC Eye Centre, New Delhi">Site 001 (AIIMS)</option>
-                      <option value="Site 002 - Sankara Nethralaya, Chennai">Site 002 (Sankara Nethralaya)</option>
-                      <option value="Site 003 - Tata Memorial Hospital, Mumbai">Site 003 (Tata Memorial)</option>
-                      <option value="Site 004 - Apollo Hospitals, Hyderabad">Site 004 (Apollo Hospitals)</option>
-                      <option value="Site 005 - Fortis Memorial Research Institute, Gurugram">Site 005 (Fortis)</option>
-                      <option value="Site 006 - Manipal Hospital, Bengaluru">Site 006 (Manipal)</option>
+                      <option value="GLOBAL">Global / Study Level (Zone 01-05, 11)</option>
+                      {adminConfiguredSites.map(s => (
+                        <option key={s.id || s.number} value={s.id || s.number}>
+                          {s.number ? `${s.number}: ` : ''}{s.name} (PI: {s.piName || 'Assigned PI'})
+                        </option>
+                      ))}
+                      {adminConfiguredSites.length === 0 && (
+                        <option disabled value="">No investigator sites created yet by Admin</option>
+                      )}
                     </select>
                   )}
                 </div>

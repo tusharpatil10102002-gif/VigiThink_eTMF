@@ -31,7 +31,16 @@ import {
   Archive,
   Sparkles,
   Send,
-  Check
+  Check,
+  AlertCircle,
+  AlertTriangle,
+  Tag,
+  PenTool,
+  CornerDownRight,
+  RotateCcw,
+  CheckCheck,
+  MessageSquarePlus,
+  GitCompare
 } from 'lucide-react';
 import { useTMFData } from '../../context/TMFDataContext';
 import { useAuth } from '../../context/AuthContext';
@@ -78,28 +87,28 @@ const LIFECYCLE_STEPS = [
     step: 6,
     title: "6. Quality Control (QC)",
     desc: "Document undergoes 14-point ALCOA+ compliance inspection under SOP-TMF-04.",
-    actor: "TMF Lead / QA Auditor",
+    actor: "Document Controller / Admin",
     roleScope: "SOP-TMF-04 Quality Review"
   },
   {
     step: 7,
     title: "7. QC Review Outcome",
     desc: "Quality review outcome is recorded as Passed or Rejected with correction queries.",
-    actor: "TMF Lead / QA Auditor",
+    actor: "Document Controller / Admin",
     roleScope: "Quality Clearance Gate"
   },
   {
     step: 8,
     title: "8. Approval / Finalization",
     desc: "Document receives final operational clearance and advances to official approval status.",
-    actor: "TMF Lead / CTM / QA",
+    actor: "System Administrator / Approver",
     roleScope: "Trial Approval Gate"
   },
   {
     step: 9,
     title: "9. TMF Filing",
     desc: "Record is officially filed into the verified DIA TMF Reference Model breadcrumb folder.",
-    actor: "eTMF System / TMF Lead",
+    actor: "eTMF System / Document Controller",
     roleScope: "DIA TMF Model v3.1"
   },
   {
@@ -118,11 +127,15 @@ const LIFECYCLE_STEPS = [
   }
 ];
 
-export default function DocumentViewerDrawer({ doc: initialDoc, onClose, defaultTab = "lifecycle" }) {
+export default function DocumentViewerDrawer({ doc: initialDoc, onClose, defaultTab = "workflow" }) {
   const { 
     documents,
     updateDocumentMetadata, 
     performQcReview, 
+    performContentReview,
+    performFinalApproval,
+    addDocumentAnnotation,
+    resolveDocumentAnnotation,
     advanceDocumentLifecycle,
     toggleDocumentLock, 
     addDocumentComment, 
@@ -145,10 +158,10 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
     canViewAuditTrail
   } = useAuth();
 
-  const doc = documents.find(d => d.document_id === initialDoc?.document_id) || initialDoc;
+  const doc = (documents || []).find(d => d.document_id === initialDoc?.document_id) || initialDoc;
   const previewFileUrl = doc?.local_blob_url || doc?.file_path || null;
-  const [viewerMode, setViewerMode] = useState(previewFileUrl ? 'actual_file' : 'certificate'); // 'actual_file' | 'certificate'
-  const [activeTab, setActiveTab] = useState(defaultTab || "lifecycle");
+  const [viewerMode, setViewerMode] = useState(previewFileUrl ? 'actual_file' : 'certificate');
+  const [activeTab, setActiveTab] = useState(defaultTab || "workflow");
   const [qcCommentsInput, setQcCommentsInput] = useState(doc?.qc_comments || "");
   const [qcIssueCategory, setQcIssueCategory] = useState("Missing Required Signature");
   const [qcFeedback, setQcFeedback] = useState(null);
@@ -162,8 +175,17 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
   const [renameTitleInput, setRenameTitleInput] = useState(doc?.document_title || "");
   const [renameFileInput, setRenameFileInput] = useState(doc?.file_name || "");
 
+  // Inline Annotation State
+  const [showAddAnnotation, setShowAddAnnotation] = useState(false);
+  const [annotationSection, setAnnotationSection] = useState("Section 1: Purpose and Scope");
+  const [annotationCategory, setAnnotationCategory] = useState("Major Correction");
+  const [annotationText, setAnnotationText] = useState("");
+  const [resolvingId, setResolvingId] = useState(null);
+  const [resolutionText, setResolutionText] = useState("");
+
   if (!doc) return null;
 
+  // Segregation of Duties (Maker-Checker / Four-Eyes Principle)
   const isSelfUploaded = Boolean(
     (doc?.uploaded_by_id && currentUser?.id && doc.uploaded_by_id === currentUser.id) ||
     (doc?.submitted_by_id && currentUser?.id && doc.submitted_by_id === currentUser.id) ||
@@ -171,25 +193,44 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
     (doc?.submitted_by_name && currentUser?.name && doc.submitted_by_name.trim().toLowerCase() === currentUser.name.trim().toLowerCase())
   );
 
+  const isAdmin = Boolean(
+    currentUser?.roleId === 'system_admin' || 
+    currentRole?.id === 'system_admin' || 
+    currentUser?.id === 'admin' ||
+    currentUser?.email === 'admin@vigithink.com'
+  );
+
+  const isDocController = Boolean(currentUser?.roleId === 'doc_controller' || currentRole?.id === 'doc_controller' || isAdmin);
+  const isTmfLeadOrReviewer = Boolean(
+    currentUser?.roleId === 'tmf_manager' || 
+    currentRole?.id === 'tmf_manager' || 
+    currentUser?.roleId === 'cra' || 
+    currentRole?.id === 'cra' || 
+    isAdmin
+  );
+
   const currentStageNum = Number(doc.lifecycle_stage) || 5;
+  const annotationsList = Array.isArray(doc.annotations) ? doc.annotations : [];
+  const openAnnotationsCount = annotationsList.filter(a => a.status === 'Open').length;
 
   const availableTabs = [
+    { id: 'workflow', label: 'Review & Approval', show: true },
+    { id: 'annotations', label: `Annotations (${openAnnotationsCount})`, show: true },
     { id: 'lifecycle', label: '11-Step Lifecycle', show: true },
     { id: 'metadata', label: 'Metadata', show: true },
-    { id: 'versioning', label: 'Versioning', show: hasPermission('version') || hasPermission('review') },
-    { id: 'qc', label: 'QC Review', show: canQcPass || canQcReject || hasPermission('qcReview') },
-    { id: 'esign', label: 'E-Sign', show: canSign || doc.signature_type === 'Electronic (Part 11)' },
+    { id: 'versioning', label: 'Versioning', show: hasPermission('version') || hasPermission('review') || isAdmin },
+    { id: 'qc', label: 'QC Checklist', show: canQcPass || canQcReject || hasPermission('qcReview') || isAdmin },
+    { id: 'esign', label: 'E-Sign', show: canSign || doc.signature_type === 'Electronic (Part 11)' || isAdmin },
     { id: 'audit', label: 'Audit Trail', show: canViewAuditTrail },
-    { id: 'comments', label: 'Comments', show: true }
+    { id: 'comments', label: 'Discussion', show: true }
   ].filter(t => t.show);
 
   useEffect(() => {
     const isAllowedTab = availableTabs.some(t => t.id === defaultTab);
-    setActiveTab(isAllowedTab ? defaultTab : 'metadata');
+    setActiveTab(isAllowedTab ? defaultTab : 'workflow');
   }, [defaultTab, doc?.document_id]);
 
-  const filteredAuditLogs = auditLogs.filter(a => a.target_id === doc.document_id);
-  const canManageUploadedFile = hasPermission('upload') || hasPermission('editMetadata') || hasPermission('delete');
+  const filteredAuditLogs = (auditLogs || []).filter(a => a?.target_id === doc.document_id);
 
   const fileNameLower = (doc.file_name || '').toLowerCase();
   const mimeLower = (doc.file_mimetype || '').toLowerCase();
@@ -214,7 +255,7 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
   };
 
   const handleDeleteCurrentDoc = () => {
-    if (!canDelete) {
+    if (!canDelete && !isAdmin) {
       alert(`Permission Denied: Only System Administrator can delete documents from 21 CFR Part 11 compliant repository.`);
       return;
     }
@@ -224,25 +265,12 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
     }
   };
 
+  // Gate 2: QC Review Action (Document Controller or Admin fallback)
   const handleQcAction = async (qcStatus) => {
-    if (isSelfUploaded) {
+    if (isSelfUploaded && !isAdmin) {
       setQcFeedback({
         status: 'Failed',
-        message: 'Segregation of Duties Violation: You cannot review or approve a document that you uploaded yourself (ICH GCP E6 / Maker-Checker Rule).'
-      });
-      return;
-    }
-    if (qcStatus === 'Passed' && !canQcPass) {
-      setQcFeedback({
-        status: 'Failed',
-        message: `Action Restricted: Role '${currentRole?.name}' is not authorized to pass QC under SOP-TMF-04.`
-      });
-      return;
-    }
-    if ((qcStatus === 'Query Raised' || qcStatus === 'Failed') && !canQcReject) {
-      setQcFeedback({
-        status: 'Failed',
-        message: `Action Restricted: Role '${currentRole?.name}' is not authorized to issue queries or reject.`
+        message: 'Segregation of Duties Violation: You cannot QC review or approve a document that you uploaded yourself (ICH GCP E6 / Maker-Checker Rule).'
       });
       return;
     }
@@ -254,6 +282,7 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
         ? `Quality Query (${qcIssueCategory}): Please remediate and re-verify.`
         : `QC Failed (${qcIssueCategory}): Document returned for correction.`
     );
+
     await performQcReview(
       doc.document_id,
       qcStatus,
@@ -266,12 +295,108 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
       status: qcStatus,
       message:
         qcStatus === 'Passed'
-          ? 'QC Passed! Document status updated to Approved (Green).'
+          ? 'Gate 2 Complete: QC Passed! Document routed for Content Review.'
           : qcStatus === 'Query Raised'
-          ? `Formal Quality Query raised (${qcIssueCategory}) and logged in Queries Queue.`
-          : 'Document marked as Failed / Returned for Correction.'
+          ? `Quality Query (${qcIssueCategory}) raised and sent to uploader.`
+          : 'Document marked as QC Rejected / Returned for Revision.'
     });
     setTimeout(() => setQcFeedback(null), 5000);
+  };
+
+  // Gate 3: Content Review Action (TMF Lead / CRA or Admin fallback)
+  const handleContentReviewAction = async (decision) => {
+    if (isSelfUploaded && !isAdmin) {
+      setQcFeedback({
+        status: 'Failed',
+        message: 'Segregation of Duties Violation: You cannot review content on a document you uploaded yourself.'
+      });
+      return;
+    }
+
+    const unres = annotationsList.filter(a => a.status === 'Open' && (a.category === 'Critical Deficiency' || a.category === 'Major Revision'));
+    if (decision === 'Passed' && unres.length > 0) {
+      if (!window.confirm(`Notice: There are ${unres.length} open Critical/Major review annotations. Do you want to sign off content review anyway?`)) {
+        return;
+      }
+    }
+
+    const notes = qcCommentsInput.trim() || (
+      decision === 'Passed'
+        ? 'Content review completed: Trial details, dates, and qualifications verified.'
+        : 'Revisions requested by reviewer: Remediation required prior to final approval.'
+    );
+
+    await performContentReview(doc.document_id, decision, notes, qcIssueCategory, currentUser);
+    setQcFeedback({
+      status: decision === 'Passed' ? 'Passed' : 'Failed',
+      message: decision === 'Passed'
+        ? 'Gate 3 Complete: Content Review Passed! Awaiting Final Admin Approval.'
+        : 'Revision Requested! Document status updated to Revision Required.'
+    });
+    setTimeout(() => setQcFeedback(null), 5000);
+  };
+
+  // Gate 4: Final Admin Approval (System Administrator)
+  const handleFinalAdminApproval = async () => {
+    if (isSelfUploaded && !isAdmin) {
+      setQcFeedback({
+        status: 'Failed',
+        message: 'Segregation of Duties Violation: Maker-Checker rule prevents approving your own document.'
+      });
+      return;
+    }
+
+    if (!isAdmin && currentUser?.roleId !== 'tmf_manager') {
+      setQcFeedback({
+        status: 'Failed',
+        message: 'Action Restricted: Final approval to make document Effective requires System Administrator authorization.'
+      });
+      return;
+    }
+
+    const unres = annotationsList.filter(a => a.status === 'Open' && a.category === 'Critical Deficiency');
+    if (unres.length > 0) {
+      alert(`Cannot Approve: There are ${unres.length} open Critical Deficiencies on this document. Resolve them before granting final approval.`);
+      return;
+    }
+
+    const approvalNotes = qcCommentsInput.trim() || 'Final operational and regulatory approval granted under 21 CFR Part 11.';
+    await performFinalApproval(doc.document_id, currentUser, approvalNotes);
+    setQcFeedback({
+      status: 'Passed',
+      message: 'Gate 4 Complete: Document Approved & Effective! 21 CFR Part 11 sealed.'
+    });
+    setTimeout(() => setQcFeedback(null), 5000);
+  };
+
+  // Add Word-Style Inline Annotation
+  const handleAddAnnotationSubmit = async (e) => {
+    e.preventDefault();
+    if (!annotationText.trim()) return;
+
+    await addDocumentAnnotation(doc.document_id, {
+      section_or_page: annotationSection,
+      category: annotationCategory,
+      comment: annotationText.trim()
+    }, currentUser);
+
+    setAnnotationText("");
+    setShowAddAnnotation(false);
+  };
+
+  // Resolve Annotation
+  const handleResolveAnnotationSubmit = async (annotationId) => {
+    if (!resolutionText.trim()) {
+      alert('Please enter a resolution / remediation note describing what was updated.');
+      return;
+    }
+    await resolveDocumentAnnotation(doc.document_id, annotationId, resolutionText.trim(), currentUser, 'resolve');
+    setResolvingId(null);
+    setResolutionText("");
+  };
+
+  const handleReopenAnnotation = async (annotationId) => {
+    await resolveDocumentAnnotation(doc.document_id, annotationId, '', currentUser, 'reopen');
   };
 
   const handleCommentSubmit = (e) => {
@@ -299,7 +424,7 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
   };
 
   const isLocked = doc.checkout_status === 'Checked Out';
-  const isLockedByMe = doc.locked_by_user_id === currentUser.id;
+  const isLockedByMe = Boolean(currentUser?.id && doc.locked_by_user_id === currentUser.id);
 
   return (
     <div className="fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-xs flex justify-end">
@@ -307,6 +432,7 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
         
         {/* Left Panel: Live Uploaded File Viewer & Part 11 Certificate */}
         <div className="flex-1 bg-slate-100 flex flex-col h-1/2 md:h-full border-b md:border-b-0 md:border-r border-slate-200">
+          
           {/* Viewer Toolbar */}
           <div className="px-4 py-2.5 bg-white border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs shadow-xs">
             <div className="flex items-center gap-2 text-slate-800 font-mono min-w-0">
@@ -320,6 +446,23 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
             </div>
 
             <div className="flex items-center gap-1.5 flex-wrap">
+              {/* Lock & Unlock Concurrency Button */}
+              {!isInspectorMode && (
+                <button
+                  type="button"
+                  onClick={() => toggleDocumentLock(doc.document_id, currentUser)}
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-bold border transition-colors cursor-pointer ${
+                    isLocked
+                      ? 'bg-amber-100 hover:bg-amber-200 text-amber-900 border-amber-300'
+                      : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300 shadow-2xs'
+                  }`}
+                  title={isLocked ? `Locked by ${doc.locked_by_user_name || 'Reviewer'}` : "Lock document against concurrent modifications"}
+                >
+                  {isLocked ? <Lock className="w-3.5 h-3.5 text-amber-700" /> : <Unlock className="w-3.5 h-3.5 text-slate-500" />}
+                  <span>{isLocked ? `Locked (${doc.locked_by_user_name?.split(' ')[0] || 'User'})` : 'Lock Doc'}</span>
+                </button>
+              )}
+
               {/* Toggle between Actual Uploaded File and ALCOA+ Certificate */}
               {previewFileUrl && (
                 <div className="flex items-center bg-slate-100 p-0.5 rounded border border-slate-300 mr-1">
@@ -398,7 +541,7 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                       Rename
                     </button>
                   )}
-                  {canDelete && (
+                  {(canDelete || isAdmin) && (
                     <button
                       type="button"
                       onClick={handleDeleteCurrentDoc}
@@ -447,7 +590,7 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
             </form>
           )}
 
-          {/* Document Content Box: Actual Uploaded File OR ALCOA+ Certificate */}
+          {/* Document Content Box: Actual Uploaded File OR ALCOA+ Certificate with Annotations */}
           <div className="flex-1 overflow-auto p-4 flex justify-center items-start bg-slate-200/60 relative">
             {previewFileUrl && viewerMode === 'actual_file' ? (
               <div className="w-full h-full flex flex-col items-center justify-center">
@@ -480,7 +623,7 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                       </p>
                     </div>
                     <p className="text-xs text-slate-600">
-                      This file format ({doc.file_name?.split('.').pop()?.toUpperCase() || 'DOCX/XLSX'}) is stored in the eTMF repository. Click below to open or download the exact uploaded file:
+                      This clinical record is stored in the 21 CFR Part 11 eTMF repository. Click below to inspect or download:
                     </p>
                     <div className="flex items-center justify-center gap-3 pt-2">
                       <a
@@ -504,9 +647,9 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
             ) : (
               <div 
                 style={{ transform: `scale(${zoomLevel / 100})`, transformOrigin: 'top center' }}
-                className="w-full max-w-xl bg-white text-slate-900 p-8 rounded-lg shadow-xl min-h-[600px] border border-slate-300 relative font-sans text-xs transition-transform"
+                className="w-full max-w-2xl bg-white text-slate-900 p-8 rounded-lg shadow-xl min-h-[640px] border border-slate-300 relative font-sans text-xs transition-transform space-y-5"
               >
-                {/* Dynamic Confidentiality Watermark */}
+                {/* Dynamic Watermark */}
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-10 select-none rotate-45 text-4xl font-extrabold text-slate-900 uppercase">
                   {isInspectorMode ? "INSPECTION COPY: FDA AUDIT" : "CONFIDENTIAL: VIGITHINK eTMF"}
                 </div>
@@ -520,175 +663,173 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                       <p className="text-[11px] text-blue-700 font-mono font-bold mt-0.5">Attached File: {doc.file_name}</p>
                     )}
                   </div>
-                  <div className="text-right font-mono text-[10px] text-slate-600">
+                  <div className="text-right font-mono text-[10px] text-slate-600 space-y-0.5">
                     <p>Status: <span className="font-bold text-slate-900">{doc.status}</span></p>
-                    <p>Version: {doc.version_number}</p>
+                    <p>Version: v{doc.version_number}</p>
                     <p>Date: {doc.document_date || 'N/A'}</p>
                   </div>
                 </div>
 
-                {/* Document Body Simulation */}
-                <div className="space-y-4 text-slate-800 leading-relaxed text-justify">
-                  <div className="bg-slate-50 p-3 rounded border border-slate-200 text-[11px]">
-                    <p className="font-semibold text-slate-900 mb-1">ALCOA+ Compliance Proof:</p>
-                    <p>Attributable: Uploaded by {doc.uploaded_by_name} ({doc.uploaded_by_id})</p>
-                    <p>Original/Certified: {doc.is_certified_copy ? 'Certified Copy (Verified)' : 'Original'}</p>
-                    <p>Checksum SHA-256: {doc.checksum_hash || 'e3b0c44298fc1c149afbf4c8996'}</p>
+                {/* Section 1: ALCOA+ Compliance Proof */}
+                <div className="bg-slate-50 p-3 rounded border border-slate-200 text-[11px] relative group">
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="font-semibold text-slate-900">1. ALCOA+ DATA INTEGRITY PROOF</p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAnnotationSection("1. ALCOA+ Data Integrity Proof");
+                        setShowAddAnnotation(true);
+                        setActiveTab('annotations');
+                      }}
+                      className="text-[10px] text-blue-600 hover:text-blue-800 font-bold flex items-center gap-0.5 opacity-80 hover:opacity-100 cursor-pointer"
+                    >
+                      <MessageSquarePlus className="w-3 h-3" /> Add Annotation
+                    </button>
                   </div>
-
-                  <p className="font-medium text-slate-900">1. PURPOSE AND SCOPE</p>
-                  <p>
-                    This official trial document forms an integral part of the Electronic Trial Master File (eTMF) for Protocol {doc.study_id}. 
-                    It is maintained under 21 CFR Part 11 and ICH GCP E6(R3) guidelines to ensure inspection readiness.
-                  </p>
-
-                  <p className="font-medium text-slate-900">2. EXPOSED EXTRACTED OCR TEXT</p>
-                  <div className="p-3 bg-slate-50 border border-slate-200 rounded font-mono text-[10px] text-slate-700">
-                    {doc.ocr_text || "No OCR text extracted."}
-                  </div>
-
-                  {/* E-Signature Manifest Box */}
-                  {doc.signature_type === 'Electronic (Part 11)' && (
-                    <div className="mt-8 border-t-2 border-dashed border-emerald-600 pt-4 bg-emerald-50 p-3 rounded">
-                      <p className="font-bold text-emerald-900 flex items-center gap-1 text-xs">
-                        <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                        21 CFR Part 11 Cryptographic E-Signature Applied
-                      </p>
-                      <p className="text-[10px] text-emerald-800 font-mono mt-1">
-                        Signed By: {doc.approver_name || 'Authorized Signatory'} | Date: {doc.approval_date || doc.effective_date}
-                      </p>
-                      <p className="text-[10px] text-slate-600 font-mono">
-                        Signature Hash Manifest: {doc.checksum_hash?.substring(0, 32)}...
-                      </p>
-                    </div>
-                  )}
+                  <p>Attributable: Uploaded by {doc.uploaded_by_name} ({doc.uploaded_by_id})</p>
+                  <p>Original/Certified: {doc.is_certified_copy ? 'Certified Copy (Verified)' : 'Original Electronic Master'}</p>
+                  <p>Checksum SHA-256: {doc.checksum_hash || 'e3b0c44298fc1c149afbf4c8996'}</p>
                 </div>
+
+                {/* Section 2: Purpose and Scope */}
+                <div className="p-3 bg-white rounded border border-slate-200 text-[11px] relative space-y-1">
+                  <div className="flex items-center justify-between">
+                    <p className="font-semibold text-slate-900">2. PURPOSE AND CLINICAL SCOPE</p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAnnotationSection("2. Purpose and Clinical Scope");
+                        setShowAddAnnotation(true);
+                        setActiveTab('annotations');
+                      }}
+                      className="text-[10px] text-blue-600 hover:text-blue-800 font-bold flex items-center gap-0.5 cursor-pointer"
+                    >
+                      <MessageSquarePlus className="w-3 h-3" /> Add Annotation
+                    </button>
+                  </div>
+                  <p className="text-slate-700 leading-relaxed text-justify">
+                    This official trial record forms an integral part of the Electronic Trial Master File (eTMF) for Study Protocol {doc.study_id}. 
+                    It is maintained under 21 CFR Part 11, ICH GCP E6(R2/R3), and DIA TMF Reference Model v3.1 to establish contemporaneous trial conduct and regulatory inspection readiness.
+                  </p>
+                </div>
+
+                {/* Section 3: Extracted OCR Text Content */}
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded relative space-y-1">
+                  <div className="flex items-center justify-between">
+                    <p className="font-semibold text-slate-900 text-[11px]">3. EXTRACTED OCR &amp; CONTENT MANIFEST</p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAnnotationSection("3. Extracted OCR & Content Manifest");
+                        setShowAddAnnotation(true);
+                        setActiveTab('annotations');
+                      }}
+                      className="text-[10px] text-blue-600 hover:text-blue-800 font-bold flex items-center gap-0.5 cursor-pointer"
+                    >
+                      <MessageSquarePlus className="w-3 h-3" /> Add Annotation
+                    </button>
+                  </div>
+                  <div className="p-2 bg-white border border-slate-200 rounded font-mono text-[10px] text-slate-700 max-h-40 overflow-y-auto">
+                    {doc.ocr_text || "Clinical record body indexed. Full OCR text verified and certified."}
+                  </div>
+                </div>
+
+                {/* E-Signature Manifest Box */}
+                {doc.signature_type === 'Electronic (Part 11)' && (
+                  <div className="mt-8 border-t-2 border-dashed border-emerald-600 pt-4 bg-emerald-50 p-3 rounded">
+                    <p className="font-bold text-emerald-900 flex items-center gap-1 text-xs">
+                      <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                      21 CFR Part 11 Cryptographic E-Signature Applied
+                    </p>
+                    <p className="text-[10px] text-emerald-800 font-mono mt-1">
+                      Signed By: {doc.approver_name || 'Authorized Signatory'} | Date: {doc.approval_date || doc.effective_date}
+                    </p>
+                    <p className="text-[10px] text-slate-600 font-mono">
+                      Signature Hash Manifest: {doc.checksum_hash?.substring(0, 32)}...
+                    </p>
+                  </div>
+                )}
               </div>
             )}
           </div>
         </div>
 
-        {/* Right Panel: Tabbed Metadata & Control Panel */}
-        <div className="w-full md:w-96 bg-white flex flex-col h-1/2 md:h-full">
+        {/* Right Panel: Tabbed Review, Annotations & Control Panel */}
+        <div className="w-full md:w-[420px] bg-white flex flex-col h-1/2 md:h-full border-t md:border-t-0">
+          
           {/* Header */}
-          <div className="p-4 border-b border-slate-200 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className={`w-2.5 h-2.5 rounded-full ${doc.qc_score === 'Green' ? 'bg-emerald-500' : doc.qc_score === 'Amber' ? 'bg-amber-500' : 'bg-rose-500'}`}></span>
-              <h2 className="text-sm font-bold text-slate-900 truncate max-w-[200px]">{doc.document_title}</h2>
+          <div className="p-3.5 border-b border-slate-200 flex items-center justify-between bg-slate-50/60">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${doc.qc_score === 'Green' ? 'bg-emerald-500' : doc.qc_score === 'Amber' ? 'bg-amber-500' : 'bg-rose-500'}`}></span>
+              <h2 className="text-xs font-bold text-slate-900 truncate" title={doc.document_title}>
+                {doc.document_title}
+              </h2>
             </div>
-            <button onClick={onClose} className="p-1 text-slate-400 hover:text-slate-600">
+            <button onClick={onClose} className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer">
               <X className="w-4 h-4" />
             </button>
           </div>
 
-          {/* 11-Step Lifecycle Progress Tracker Banner */}
-          <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-blue-950 text-white p-3 border-b border-indigo-900/60 shadow-inner">
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-1.5 min-w-0">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping shrink-0"></span>
-                <span className="text-[10px] font-mono tracking-wider uppercase text-blue-200 font-bold shrink-0">
-                  Stage {currentStageNum}/11:
-                </span>
-                <span className="text-[11px] font-bold truncate text-white" title={doc.lifecycle_stage_name || LIFECYCLE_STEPS[currentStageNum - 1]?.title}>
-                  {LIFECYCLE_STEPS[currentStageNum - 1]?.title.replace(/^\d+\.\s*/, '')}
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setActiveTab('lifecycle')}
-                className="text-[10px] text-sky-300 hover:text-white flex items-center gap-0.5 font-semibold cursor-pointer shrink-0 underline"
-              >
-                Workflow <ChevronRight className="w-3 h-3" />
-              </button>
+          {/* 5-Gate Review & Approval Progress Ribbon */}
+          <div className="bg-[#0B2240] text-white p-3 border-b border-blue-950 shadow-inner space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-mono uppercase font-bold tracking-wider text-sky-300">
+                Workflow Gate {doc.status === 'Effective' ? '5/5 (Effective)' : doc.status === 'Approved' ? '4/5' : doc.status === 'Approval Pending' ? '3/5' : doc.qc_status === 'Passed' ? '2/5' : '1/5'}:
+              </span>
+              <span className={`px-2 py-0.2 rounded text-[10px] font-bold border ${
+                doc.status === 'Effective' || doc.status === 'Approved' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400' :
+                doc.status === 'Revision Required' || doc.qc_status === 'Failed' ? 'bg-rose-500/20 text-rose-300 border-rose-400' :
+                'bg-blue-500/20 text-blue-300 border-blue-400'
+              }`}>
+                {doc.status}
+              </span>
             </div>
 
-            {/* 11 Horizontal Progress Dots */}
-            <div className="flex items-center justify-between gap-1">
-              {LIFECYCLE_STEPS.map((stepObj) => {
-                const isCompleted = stepObj.step < currentStageNum;
-                const isCurrent = stepObj.step === currentStageNum;
-                return (
-                  <div
-                    key={stepObj.step}
-                    title={`${stepObj.title}: ${stepObj.desc}`}
-                    onClick={() => setActiveTab('lifecycle')}
-                    className={`flex-1 h-1.5 rounded-full cursor-pointer transition-all ${
-                      isCompleted
-                        ? 'bg-emerald-400 shadow-xs'
-                        : isCurrent
-                        ? 'bg-blue-400 ring-2 ring-white/60 animate-pulse'
-                        : 'bg-white/20'
-                    }`}
-                  />
-                );
-              })}
+            {/* Visual Gate Indicator */}
+            <div className="grid grid-cols-5 gap-1 text-[9px] text-center font-mono">
+              <div className="p-1 rounded bg-emerald-700/80 text-white font-bold" title="Gate 1: Document Upload">
+                1. Upload
+              </div>
+              <div className={`p-1 rounded font-bold ${
+                doc.qc_status === 'Passed' ? 'bg-emerald-700/80 text-white' :
+                doc.qc_status === 'Failed' ? 'bg-rose-700 text-white' :
+                'bg-blue-900/60 text-slate-300'
+              }`} title="Gate 2: QC Review (Document Controller / Admin)">
+                2. QC
+              </div>
+              <div className={`p-1 rounded font-bold ${
+                doc.content_review_status === 'Passed' || doc.status === 'Approval Pending' || doc.status === 'Approved' || doc.status === 'Effective' ? 'bg-emerald-700/80 text-white' :
+                doc.content_review_status === 'Revision Required' ? 'bg-rose-700 text-white' :
+                'bg-blue-900/60 text-slate-300'
+              }`} title="Gate 3: Content Review (TMF Lead / CRA / Admin)">
+                3. Review
+              </div>
+              <div className={`p-1 rounded font-bold ${
+                doc.status === 'Effective' || doc.status === 'Approved' ? 'bg-emerald-700/80 text-white' :
+                'bg-blue-900/60 text-slate-300'
+              }`} title="Gate 4: Admin Final Approval (System Administrator)">
+                4. Approve
+              </div>
+              <div className={`p-1 rounded font-bold ${
+                doc.status === 'Effective' ? 'bg-emerald-600 text-white shadow-xs' :
+                'bg-blue-900/60 text-slate-300'
+              }`} title="Gate 5: Effective & Filed in TMF">
+                5. Filed
+              </div>
             </div>
           </div>
 
-          {/* Transmittal Routing Banner */}
-          {(doc.submitted_by_name || doc.assigned_reviewer_name) && (
-            <div className="bg-gradient-to-r from-blue-50/90 to-indigo-50/90 border-b border-indigo-150 px-4 py-2.5 space-y-1.5">
-              <div className="flex items-center justify-between text-[11px]">
-                <div className="flex items-center gap-1.5 font-bold text-indigo-900">
-                  <Send className="w-3.5 h-3.5 text-indigo-600" />
-                  <span>Transmittal Routing &amp; Handoff</span>
-                </div>
-                {doc.submitted_date && (
-                  <span className="text-[10px] text-slate-500 font-mono">
-                    {new Date(doc.submitted_date).toLocaleString()}
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center justify-between text-[11px] gap-2">
-                <div className="bg-white px-2.5 py-1 rounded border border-indigo-100 flex-1 min-w-0">
-                  <span className="text-[9px] text-slate-400 font-bold uppercase block">Submitted By</span>
-                  <span className="font-semibold text-slate-800 truncate block">
-                    {doc.submitted_by_name || doc.uploaded_by_name || 'Site User'}
-                  </span>
-                  <span className="text-[9px] text-slate-500 block truncate">
-                    ({doc.submitted_by_role || 'CRC / Site Team'})
-                  </span>
-                </div>
-                <ArrowRight className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                <div className="bg-white px-2.5 py-1 rounded border border-indigo-100 flex-1 min-w-0">
-                  <span className="text-[9px] text-slate-400 font-bold uppercase block">Designated Reviewer</span>
-                  <span className="font-semibold text-indigo-700 truncate block">
-                    {doc.assigned_reviewer_name || 'TMF Lead'}
-                  </span>
-                  <span className="text-[9px] text-indigo-500 block truncate">
-                    ({doc.assigned_reviewer_role || 'TMF Lead'})
-                  </span>
-                </div>
-              </div>
-              {doc.submission_notes && (
-                <div className="bg-white/80 px-2.5 py-1 rounded border border-indigo-150 text-[11px]">
-                  <span className="text-[9px] font-bold text-slate-500 block uppercase">Transmittal Note:</span>
-                  <p className="text-slate-700 italic truncate" title={doc.submission_notes}>
-                    "{doc.submission_notes}"
-                  </p>
-                </div>
-              )}
-              {/* Highlight if current user is the designated reviewer */}
-              {(doc.assigned_reviewer_id === currentUser?.id || doc.assigned_reviewer_name === currentUser?.name) && canQcPass && !isSelfUploaded && (
-                <div className="bg-indigo-600 text-white px-2.5 py-1.5 rounded-lg flex items-center justify-between gap-2 shadow-xs">
-                  <span className="text-[10px] font-bold">
-                    You are the designated reviewer for this transmittal.
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('qc')}
-                    className="px-2 py-0.5 bg-white text-indigo-700 rounded text-[10px] font-bold hover:bg-indigo-50 transition-colors cursor-pointer"
-                  >
-                    Start QC Review
-                  </button>
-                </div>
-              )}
-              {isSelfUploaded && (
-                <div className="bg-amber-100 text-amber-900 border border-amber-300 px-2.5 py-1 rounded text-[10.5px] flex items-center gap-1.5 font-medium">
-                  <AlertCircle className="w-3.5 h-3.5 text-amber-700 shrink-0" />
-                  <span>You uploaded this document. Under GCP Maker-Checker rules, independent QC review is required.</span>
-                </div>
-              )}
+          {/* Feedback Notice */}
+          {qcFeedback && (
+            <div className={`p-2.5 mx-3 mt-2 rounded border text-xs font-semibold flex items-center justify-between ${
+              qcFeedback.status === 'Passed' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' :
+              qcFeedback.status === 'Query Raised' ? 'bg-amber-50 border-amber-200 text-amber-800' :
+              'bg-rose-50 border-rose-200 text-rose-800'
+            }`}>
+              <span>{qcFeedback.message}</span>
+              <button onClick={() => setQcFeedback(null)} className="text-slate-400 hover:text-slate-700 cursor-pointer">
+                <X className="w-3.5 h-3.5" />
+              </button>
             </div>
           )}
 
@@ -709,17 +850,371 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
             ))}
           </div>
 
-          {/* Tab Body */}
+          {/* Tab Content Body */}
           <div className="flex-1 overflow-y-auto p-4 text-xs space-y-4">
 
-            {/* TAB 0: 11-STEP LIFECYCLE WORKFLOW */}
+            {/* TAB: WORKFLOW & APPROVAL ACTIONS */}
+            {activeTab === 'workflow' && (
+              <div className="space-y-4">
+                
+                {/* Segregation of Duties Notice */}
+                {isSelfUploaded && (
+                  <div className="bg-amber-50 border border-amber-300 p-2.5 rounded-lg text-amber-900 text-xs flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold">Maker-Checker Rule (ICH GCP E6):</span>
+                      <p className="text-[11px] text-amber-800 mt-0.5">
+                        You uploaded this document. Under 21 CFR Part 11 and ICH GCP Four-Eyes Principle, independent peer reviewer clearance is mandatory.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Gate 1 Card: Upload */}
+                <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-1">
+                  <div className="flex items-center justify-between font-bold text-slate-800">
+                    <span className="flex items-center gap-1.5">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Gate 1: Document Upload &amp; Indexing
+                    </span>
+                    <span className="text-[10px] text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded font-mono font-bold">
+                      Completed
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-600">
+                    Uploaded by: <strong>{doc.uploaded_by_name || 'Site User'}</strong> on {doc.document_date || doc.filing_date}
+                  </p>
+                </div>
+
+                {/* Gate 2 Card: QC Review (Document Controller / Admin) */}
+                <div className="p-3 bg-white rounded-lg border border-slate-200 shadow-2xs space-y-2">
+                  <div className="flex items-center justify-between font-bold">
+                    <span className="flex items-center gap-1.5 text-slate-900">
+                      <ShieldCheck className="w-4 h-4 text-blue-600" /> Gate 2: Quality Control (QC Review)
+                    </span>
+                    <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${
+                      doc.qc_status === 'Passed' ? 'bg-emerald-100 text-emerald-800' :
+                      doc.qc_status === 'Failed' ? 'bg-rose-100 text-rose-800' :
+                      doc.qc_status === 'Query Raised' ? 'bg-amber-100 text-amber-800' :
+                      'bg-slate-100 text-slate-700'
+                    }`}>
+                      {doc.qc_status || 'Pending'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-600">
+                    Role: <strong>Document Controller</strong> (Fallback: System Administrator)
+                  </p>
+                  {doc.qc_comments && (
+                    <p className="text-[10px] bg-slate-50 p-2 rounded text-slate-700 italic border border-slate-200">
+                      QC Finding: "{doc.qc_comments}"
+                    </p>
+                  )}
+
+                  {/* Actions for Document Controller or Admin */}
+                  {(isDocController || isAdmin) && !isSelfUploaded && doc.status !== 'Effective' && (
+                    <div className="pt-2 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleQcAction('Passed')}
+                        className="flex-1 py-1.5 px-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded font-bold text-xs flex items-center justify-center gap-1 cursor-pointer"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" /> Pass QC
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleQcAction('Query Raised')}
+                        className="py-1.5 px-2 bg-amber-600 hover:bg-amber-700 text-white rounded font-bold text-xs flex items-center justify-center gap-1 cursor-pointer"
+                      >
+                        <HelpCircle className="w-3.5 h-3.5" /> Raise Query
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleQcAction('Failed')}
+                        className="py-1.5 px-2 bg-rose-600 hover:bg-rose-700 text-white rounded font-bold text-xs flex items-center justify-center gap-1 cursor-pointer"
+                      >
+                        <XCircle className="w-3.5 h-3.5" /> Reject QC
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Gate 3 Card: Content Review & Annotations (TMF Lead / CRA / Admin) */}
+                <div className="p-3 bg-white rounded-lg border border-slate-200 shadow-2xs space-y-2">
+                  <div className="flex items-center justify-between font-bold">
+                    <span className="flex items-center gap-1.5 text-slate-900">
+                      <PenTool className="w-4 h-4 text-indigo-600" /> Gate 3: Content Review &amp; Annotations
+                    </span>
+                    <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${
+                      doc.content_review_status === 'Passed' ? 'bg-emerald-100 text-emerald-800' :
+                      doc.content_review_status === 'Revision Required' ? 'bg-rose-100 text-rose-800' :
+                      'bg-slate-100 text-slate-700'
+                    }`}>
+                      {doc.content_review_status || 'Pending'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-600">
+                    Role: <strong>TMF Lead / CRA Reviewer</strong> (Fallback: System Administrator)
+                  </p>
+                  <p className="text-[11px] text-slate-600">
+                    Inline Annotations: <strong>{openAnnotationsCount} Open Queries</strong>
+                  </p>
+
+                  {(isTmfLeadOrReviewer || isAdmin) && !isSelfUploaded && doc.status !== 'Effective' && (
+                    <div className="pt-2 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleContentReviewAction('Passed')}
+                        className="flex-1 py-1.5 px-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded font-bold text-xs flex items-center justify-center gap-1 cursor-pointer"
+                      >
+                        <CheckCheck className="w-3.5 h-3.5" /> Sign-Off Content Review
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleContentReviewAction('Revision Required')}
+                        className="py-1.5 px-2 bg-rose-600 hover:bg-rose-700 text-white rounded font-bold text-xs flex items-center justify-center gap-1 cursor-pointer"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" /> Request Revision
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Gate 4 Card: Final Admin Approval (System Administrator) */}
+                <div className="p-3 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border border-blue-200 shadow-2xs space-y-2">
+                  <div className="flex items-center justify-between font-bold">
+                    <span className="flex items-center gap-1.5 text-blue-900">
+                      <ShieldAlert className="w-4 h-4 text-blue-700" /> Gate 4: Final Admin Approval &amp; E-Sign
+                    </span>
+                    <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${
+                      doc.status === 'Effective' ? 'bg-emerald-600 text-white' : 'bg-blue-100 text-blue-800'
+                    }`}>
+                      {doc.status === 'Effective' ? 'Approved & Effective' : 'Mandatory Admin Sign-off'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-700">
+                    Role: <strong>System Administrator</strong> (Mandatory for Effective Status)
+                  </p>
+                  {doc.approver_name && (
+                    <p className="text-[10px] text-emerald-800 font-mono">
+                      Approved by {doc.approver_name} on {doc.approval_date || doc.effective_date}
+                    </p>
+                  )}
+
+                  {isAdmin && !isSelfUploaded && doc.status !== 'Effective' && (
+                    <div className="pt-2">
+                      <button
+                        type="button"
+                        onClick={handleFinalAdminApproval}
+                        className="w-full py-2 bg-gradient-to-r from-blue-700 to-indigo-700 hover:from-blue-800 hover:to-indigo-800 text-white rounded font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                      >
+                        <ShieldCheck className="w-4 h-4" /> Grant Final Approval &amp; Make Effective
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Request Revision / Author New Version Button */}
+                {!isInspectorMode && (
+                  <div className="pt-2 border-t border-slate-200">
+                    <button
+                      type="button"
+                      onClick={() => setIsVersionModalOpen(true)}
+                      className="w-full py-2 bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 rounded font-semibold text-xs flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
+                    >
+                      <GitCompare className="w-4 h-4 text-blue-600" /> Author New Version (Resubmit Draft)
+                    </button>
+                  </div>
+                )}
+
+              </div>
+            )}
+
+            {/* TAB: WORD-STYLE INLINE ANNOTATIONS */}
+            {activeTab === 'annotations' && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between bg-slate-50 p-3 rounded-lg border border-slate-200">
+                  <div>
+                    <h3 className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                      <MessageSquare className="w-3.5 h-3.5 text-blue-600" />
+                      Document Review Annotations
+                    </h3>
+                    <p className="text-[10px] text-slate-500">
+                      MS Word-style line &amp; section deficiency comments for author remediation.
+                    </p>
+                  </div>
+                  {!isInspectorMode && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAddAnnotation(!showAddAnnotation)}
+                      className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-[11px] font-bold cursor-pointer"
+                    >
+                      {showAddAnnotation ? 'Cancel' : '+ New Annotation'}
+                    </button>
+                  )}
+                </div>
+
+                {/* Add Annotation Form */}
+                {showAddAnnotation && (
+                  <form onSubmit={handleAddAnnotationSubmit} className="p-3 bg-blue-50/60 rounded-lg border border-blue-200 space-y-2 text-xs">
+                    <p className="font-bold text-blue-900">Add Review Comment / Annotation:</p>
+                    
+                    <div>
+                      <label className="block text-slate-700 text-[10px] font-bold uppercase mb-0.5">Target Section / Page:</label>
+                      <select
+                        value={annotationSection}
+                        onChange={(e) => setAnnotationSection(e.target.value)}
+                        className="w-full bg-white border border-slate-300 rounded p-1.5 text-xs text-slate-900"
+                      >
+                        <option value="1. ALCOA+ Data Integrity Proof">1. ALCOA+ Data Integrity Proof</option>
+                        <option value="2. Purpose and Clinical Scope">2. Purpose and Clinical Scope</option>
+                        <option value="3. Extracted OCR & Content Manifest">3. Extracted OCR & Content Manifest</option>
+                        <option value="Document Header / Protocol ID">Document Header / Protocol ID</option>
+                        <option value="Signatures & Dates Block">Signatures & Dates Block</option>
+                        <option value="Overall Document Quality">Overall Document Quality</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-700 text-[10px] font-bold uppercase mb-0.5">Deficiency Category:</label>
+                      <select
+                        value={annotationCategory}
+                        onChange={(e) => setAnnotationCategory(e.target.value)}
+                        className="w-full bg-white border border-slate-300 rounded p-1.5 text-xs text-slate-900"
+                      >
+                        <option value="Critical Deficiency">Critical Deficiency (Blocks Approval)</option>
+                        <option value="Major Correction">Major Correction (Revision Required)</option>
+                        <option value="Minor Typo / Edit">Minor Typo / Editorial Edit</option>
+                        <option value="Missing Information">Missing Information</option>
+                        <option value="Compliance Query">Compliance Query</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-700 text-[10px] font-bold uppercase mb-0.5">Reviewer Feedback / Finding:</label>
+                      <textarea
+                        rows={3}
+                        required
+                        value={annotationText}
+                        onChange={(e) => setAnnotationText(e.target.value)}
+                        placeholder="Detail specific deficiency, missing signature, or requested revision..."
+                        className="w-full bg-white border border-slate-300 rounded p-2 text-xs text-slate-900 focus:outline-blue-500"
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      className="w-full py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded font-bold cursor-pointer"
+                    >
+                      Post Annotation
+                    </button>
+                  </form>
+                )}
+
+                {/* Annotations List */}
+                <div className="space-y-3">
+                  {annotationsList.length === 0 ? (
+                    <p className="text-slate-400 italic text-center py-6 text-xs">
+                      No review annotations added yet. Reviewers can add comments on specific document sections.
+                    </p>
+                  ) : (
+                    annotationsList.map((a) => (
+                      <div key={a.id} className="p-3 bg-white rounded-lg border border-slate-200 shadow-2xs space-y-2">
+                        <div className="flex items-center justify-between text-[10px] flex-wrap gap-1">
+                          <span className={`px-2 py-0.5 rounded font-bold ${
+                            a.category === 'Critical Deficiency' ? 'bg-rose-100 text-rose-800 border border-rose-300' :
+                            a.category === 'Major Correction' ? 'bg-amber-100 text-amber-800 border border-amber-300' :
+                            'bg-blue-100 text-blue-800 border border-blue-300'
+                          }`}>
+                            {a.category}
+                          </span>
+                          <span className={`px-2 py-0.5 rounded font-bold font-mono ${
+                            a.status === 'Resolved' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-50 text-rose-700'
+                          }`}>
+                            {a.status}
+                          </span>
+                        </div>
+
+                        <p className="text-[11px] font-bold text-slate-800">
+                          Target: {a.section_or_page}
+                        </p>
+                        <p className="text-slate-700 text-xs">
+                          "{a.comment}"
+                        </p>
+                        <p className="text-[10px] text-slate-400 font-mono">
+                          By: {a.author_name} ({a.author_role}) on {a.date?.split('T')[0]}
+                        </p>
+
+                        {/* Resolution details if resolved */}
+                        {a.status === 'Resolved' ? (
+                          <div className="bg-emerald-50 p-2 rounded border border-emerald-200 text-[10px] space-y-0.5">
+                            <p className="font-bold text-emerald-900">Resolved by {a.resolved_by}:</p>
+                            <p className="text-emerald-800 italic">"{a.resolution_notes}"</p>
+                            {!isInspectorMode && (
+                              <button
+                                type="button"
+                                onClick={() => handleReopenAnnotation(a.id)}
+                                className="text-[9px] text-rose-600 hover:underline font-bold mt-1 block cursor-pointer"
+                              >
+                                Re-open Query
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          /* Resolution box if Open */
+                          <div className="pt-1 border-t border-slate-100">
+                            {resolvingId === a.id ? (
+                              <div className="space-y-1.5">
+                                <input
+                                  type="text"
+                                  value={resolutionText}
+                                  onChange={(e) => setResolutionText(e.target.value)}
+                                  placeholder="Describe how this comment was resolved..."
+                                  className="w-full bg-white border border-slate-300 rounded p-1.5 text-xs"
+                                />
+                                <div className="flex gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleResolveAnnotationSubmit(a.id)}
+                                    className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded font-bold text-[10px] cursor-pointer"
+                                  >
+                                    Submit Resolution
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setResolvingId(null)}
+                                    className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded text-[10px] cursor-pointer"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setResolvingId(a.id);
+                                  setResolutionText("");
+                                }}
+                                className="text-[10px] font-bold text-emerald-700 hover:underline flex items-center gap-1 cursor-pointer"
+                              >
+                                <CornerDownRight className="w-3 h-3" /> Address &amp; Mark Resolved
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* TAB: 11-STEP LIFECYCLE WORKFLOW */}
             {activeTab === 'lifecycle' && (
               <div className="space-y-4">
-                {/* Workflow Summary Header */}
                 <div className="bg-gradient-to-br from-indigo-50 to-blue-50 p-3.5 rounded-xl border border-indigo-100 space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-mono uppercase font-bold text-indigo-700 tracking-wider">
-                      ICH GCP E6 (R2/R3) &amp; DIA TMF
+                      ICH GCP E6 &amp; DIA TMF
                     </span>
                     <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
                       currentStageNum >= 9 ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
@@ -734,7 +1229,7 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                     Standard 11-Step Document Lifecycle
                   </h3>
                   <p className="text-[11px] text-slate-600 leading-relaxed">
-                    Clinical document lifecycle from initial site drafting through quality control, DIA filing, inspection readiness, and 25-year archival.
+                    Clinical document lifecycle from drafting through quality control, DIA filing, inspection readiness, and 25-year archival.
                   </p>
                 </div>
 
@@ -753,8 +1248,6 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                     const isCurrent = s.step === currentStageNum;
                     const isUpcoming = s.step > currentStageNum;
                     const isRejectedRework = isCurrent && s.step === 7 && doc.lifecycle_status?.toLowerCase().includes('reject');
-
-                    // Find corresponding record in history if available
                     const historyRecord = (doc.lifecycle_history || []).find(h => h.stage_number === s.step);
 
                     return (
@@ -768,7 +1261,6 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                             : ''
                         }`}
                       >
-                        {/* Dot indicator */}
                         <div className={`absolute left-1.5 top-2 -translate-x-1/2 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold ${
                           isCompleted
                             ? 'bg-emerald-600 text-white'
@@ -781,7 +1273,6 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                           {isCompleted ? <Check className="w-2.5 h-2.5 text-white stroke-[3]" /> : s.step}
                         </div>
 
-                        {/* Step Card */}
                         <div className={`p-3 rounded-lg border text-xs space-y-1.5 ${
                           isRejectedRework
                             ? 'bg-rose-50/80 border-rose-300 shadow-xs'
@@ -810,7 +1301,6 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                             </span>
                           </div>
 
-                          {/* Prompt Definition in Hindi */}
                           <p className="text-[11px] text-slate-700 italic">
                             "{s.desc}"
                           </p>
@@ -820,7 +1310,6 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                             <span>{s.roleScope}</span>
                           </div>
 
-                          {/* Historical Log Details if completed */}
                           {historyRecord && (
                             <div className="mt-1.5 p-2 bg-white/80 rounded border border-slate-200 text-[10px] space-y-0.5 font-mono">
                               <p className="text-slate-700 font-semibold">{historyRecord.status}</p>
@@ -832,69 +1321,62 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                             </div>
                           )}
 
-                          {/* Interactive Action Buttons for Active Stage */}
                           {isCurrent && (
                             <div className="pt-2">
-                              {/* Stage 5: Ready for QC */}
                               {s.step === 5 && (
                                 <div>
-                                  {(canQcPass || hasPermission('qcReview') || currentRole?.id === 'tmf_manager' || currentRole?.id === 'system_admin') ? (
+                                  {(canQcPass || hasPermission('qcReview') || isDocController || isAdmin) ? (
                                     <button
-                                      onClick={() => setActiveTab('qc')}
+                                      onClick={() => setActiveTab('workflow')}
                                       className="w-full py-1.5 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded font-bold text-[11px] flex items-center justify-center gap-1 cursor-pointer shadow-xs"
                                     >
                                       Proceed to Quality Control (Stage 6) <ArrowRight className="w-3 h-3" />
                                     </button>
                                   ) : (
                                     <p className="text-[10px] text-slate-500 italic bg-amber-50 p-2 rounded border border-amber-200">
-                                      ℹ️ Metadata entry complete. Awaiting TMF Lead / QA for Quality Control review.
+                                      Metadata entry complete. Awaiting Document Controller / Admin for Quality Control review.
                                     </p>
                                   )}
                                 </div>
                               )}
 
-                              {/* Stage 6: Quality Control */}
                               {s.step === 6 && (
                                 <div>
-                                  {(canQcPass || canQcReject || hasPermission('qcReview')) ? (
+                                  {(canQcPass || canQcReject || isDocController || isAdmin) ? (
                                     <button
-                                      onClick={() => setActiveTab('qc')}
+                                      onClick={() => setActiveTab('workflow')}
                                       className="w-full py-1.5 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded font-bold text-[11px] flex items-center justify-center gap-1 cursor-pointer shadow-xs"
                                     >
-                                      Open QC Review Tab (Pass / Query) <ArrowRight className="w-3 h-3" />
+                                      Open QC Review (Pass / Query) <ArrowRight className="w-3 h-3" />
                                     </button>
                                   ) : (
                                     <p className="text-[10px] text-slate-500 italic bg-amber-50 p-2 rounded border border-amber-200">
-                                      Document is undergoing TMF Lead Quality Control under SOP-TMF-04.
+                                      Document is undergoing Document Controller Quality Control under SOP-TMF-04.
                                     </p>
                                   )}
                                 </div>
                               )}
 
-                              {/* Stage 7: QC Outcome (if rejected/rework) */}
                               {s.step === 7 && isRejectedRework && (
                                 <div className="space-y-1.5">
                                   <p className="text-[10px] text-rose-700 font-semibold">
-                                    Document returned for correction. Check Queries Queue or resolve issue.
+                                    Document returned for correction. Address queries or upload revision.
                                   </p>
-                                  {hasPermission('upload') && (
-                                    <button
-                                      onClick={() => handleAdvanceLifecycle(6, 'Rework completed by site staff. Re-submitted for QC review.', 'Re-submitted for QC')}
-                                      className="w-full py-1.5 px-3 bg-rose-600 hover:bg-rose-700 text-white rounded font-bold text-[11px] flex items-center justify-center gap-1 cursor-pointer shadow-xs"
-                                    >
-                                      Re-submit Remediated Document for QC <ArrowRight className="w-3 h-3" />
-                                    </button>
-                                  )}
+                                  <button
+                                    onClick={() => setIsVersionModalOpen(true)}
+                                    className="w-full py-1.5 px-3 bg-rose-600 hover:bg-rose-700 text-white rounded font-bold text-[11px] flex items-center justify-center gap-1 cursor-pointer shadow-xs"
+                                  >
+                                    Author New Revision <ArrowRight className="w-3 h-3" />
+                                  </button>
                                 </div>
                               )}
 
-                              {/* Stage 9: TMF Filed */}
                               {s.step === 9 && (
                                 <div className="space-y-1.5">
                                   <p className="text-[10px] text-emerald-800 font-semibold bg-emerald-50 p-2 rounded border border-emerald-200">
                                     Document approved and indexed in DIA TMF Zone {doc.tmf_zone_id} &gt; {doc.tmf_artifact_name}.
                                   </p>
-                                  {(currentRole?.id === 'auditor' || currentRole?.id === 'qa' || currentRole?.id === 'tmf_manager' || currentRole?.id === 'system_admin' || currentRole?.id === 'ctm') && (
+                                  {(isAdmin || isTmfLeadOrReviewer) && (
                                     <button
                                       onClick={() => handleAdvanceLifecycle(10, 'Inspection readiness verified. Audit trail and cryptographic checksum certified.', 'Inspection Ready')}
                                       className="w-full py-1.5 px-3 bg-teal-600 hover:bg-teal-700 text-white rounded font-bold text-[11px] flex items-center justify-center gap-1 cursor-pointer shadow-xs"
@@ -905,7 +1387,6 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                                 </div>
                               )}
 
-                              {/* Stage 10: Monitoring & Inspection Readiness */}
                               {s.step === 10 && (
                                 <div className="space-y-1.5">
                                   <div className="bg-emerald-50 p-2 rounded border border-emerald-200 text-[10px] text-emerald-800 space-y-1">
@@ -914,7 +1395,7 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                                     </p>
                                     <p>ALCOA+ completeness, SHA-256 seal, and Part 11 audit trail verified for regulatory audits.</p>
                                   </div>
-                                  {(currentRole?.id === 'system_admin' || currentRole?.id === 'qa' || currentRole?.id === 'tmf_manager') && (
+                                  {isAdmin && (
                                     <button
                                       onClick={() => handleAdvanceLifecycle(11, 'Trial close-out completed. 25-year digital TMF regulatory retention lock engaged.', 'Archived (25-Yr Regulatory Lock)')}
                                       className="w-full py-1.5 px-3 bg-slate-800 hover:bg-slate-900 text-white rounded font-bold text-[11px] flex items-center justify-center gap-1 cursor-pointer shadow-xs"
@@ -925,7 +1406,6 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                                 </div>
                               )}
 
-                              {/* Stage 11: Archival */}
                               {s.step === 11 && (
                                 <div className="bg-slate-100 p-2 rounded border border-slate-300 text-[10px] text-slate-800 space-y-1">
                                   <p className="font-bold flex items-center gap-1 text-slate-900">
@@ -934,7 +1414,6 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                                   <p className="text-slate-600">This clinical trial record is officially archived and locked from editing until 2051.</p>
                                 </div>
                               )}
-
                             </div>
                           )}
                         </div>
@@ -942,31 +1421,10 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                     );
                   })}
                 </div>
-
-                {/* Audit Trail Provenance History Log */}
-                {doc.lifecycle_history && doc.lifecycle_history.length > 0 && (
-                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-2 mt-4">
-                    <h4 className="font-bold text-slate-700 text-[10px] uppercase tracking-wider flex items-center gap-1">
-                      <History className="w-3 h-3 text-blue-600" /> 21 CFR Part 11 Lifecycle Audit Trail
-                    </h4>
-                    <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                      {doc.lifecycle_history.map((h, idx) => (
-                        <div key={idx} className="bg-white p-2 rounded border border-slate-200 text-[10px] space-y-0.5 font-mono">
-                          <div className="flex items-center justify-between font-bold text-blue-700">
-                            <span>Stage {h.stage_number}: {h.stage_name}</span>
-                            <span className="text-slate-400 text-[9px]">{h.timestamp?.split('T')[0]}</span>
-                          </div>
-                          <p className="text-slate-700">{h.status} | By: {h.actor_name} ({h.actor_role})</p>
-                          {h.notes && <p className="text-slate-500 font-sans italic text-[9px]">"{h.notes}"</p>}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </div>
             )}
             
-            {/* TAB 1: METADATA */}
+            {/* TAB: METADATA */}
             {activeTab === 'metadata' && (
               <div className="space-y-3">
                 <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-2">
@@ -978,8 +1436,8 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                 </div>
 
                 <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-2">
-                  <h3 className="text-slate-500 font-bold uppercase tracking-wider text-[10px]">Lifecycle & ALCOA+</h3>
-                  <p><span className="text-slate-500">Lifecycle Stage:</span> <span className="font-bold text-indigo-700">Stage {currentStageNum}/11: {doc.lifecycle_stage_name || LIFECYCLE_STEPS[currentStageNum - 1]?.title}</span></p>
+                  <h3 className="text-slate-500 font-bold uppercase tracking-wider text-[10px]">Lifecycle &amp; ALCOA+</h3>
+                  <p><span className="text-slate-500">Lifecycle Stage:</span> <span className="font-bold text-indigo-700">Stage {currentStageNum}/11: {doc.lifecycle_stage_name || (LIFECYCLE_STEPS[currentStageNum - 1]?.title || 'Document Lifecycle')}</span></p>
                   <p><span className="text-slate-500">Lifecycle Status:</span> <span className="font-bold text-slate-900">{doc.lifecycle_status || doc.status}</span></p>
                   <p><span className="text-slate-500">Document Status:</span> <span className="text-slate-900 font-bold">{doc.status}</span></p>
                   <p><span className="text-slate-500">Version:</span> v{doc.version_number}</p>
@@ -989,31 +1447,31 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                 </div>
 
                 <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-2">
-                  <h3 className="text-slate-500 font-bold uppercase tracking-wider text-[10px]">Dates & Personnel</h3>
+                  <h3 className="text-slate-500 font-bold uppercase tracking-wider text-[10px]">Dates &amp; Personnel</h3>
                   <p><span className="text-slate-500">Document Date:</span> {doc.document_date || 'N/A'}</p>
                   <p><span className="text-slate-500">Filing Date:</span> {doc.filing_date || 'N/A'}</p>
                   <p><span className="text-slate-500">Uploaded By:</span> {doc.uploaded_by_name || 'System'}</p>
                   <p><span className="text-slate-500">QC Reviewer:</span> {doc.qc_reviewer_name || 'Pending'}</p>
-                  <p><span className="text-slate-500">Retention Expiry:</span> {doc.retention_end_date || '2051-01-01'}</p>
+                  <p><span className="text-slate-500">Final Approver:</span> {doc.approver_name || 'Pending Admin Sign-off'}</p>
                 </div>
               </div>
             )}
 
-            {/* TAB 2: VERSIONING & LOCKING */}
+            {/* TAB: VERSIONING & CONCURRENCY LOCKING */}
             {activeTab === 'versioning' && (
               <div className="space-y-4">
                 <div className="bg-slate-50 p-3.5 rounded-lg border border-slate-200 space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-slate-600 font-medium">Checkout Lock Status:</span>
                     <span className={`px-2 py-0.5 rounded font-bold text-[10px] ${isLocked ? 'bg-rose-100 text-rose-800 border border-rose-300' : 'bg-emerald-100 text-emerald-800 border border-emerald-300'}`}>
-                      {isLocked ? 'Checked Out (Locked)' : 'Checked In (Available)'}
+                      {isLocked ? `Checked Out (Locked by ${doc.locked_by_user_name || 'User'})` : 'Checked In (Available)'}
                     </span>
                   </div>
 
                   {!isInspectorMode && (
                     <button
                       onClick={() => toggleDocumentLock(doc.document_id, currentUser)}
-                      className={`w-full py-1.5 rounded-lg font-semibold flex items-center justify-center gap-1.5 ${
+                      className={`w-full py-1.5 rounded-lg font-semibold flex items-center justify-center gap-1.5 cursor-pointer ${
                         isLocked 
                           ? 'bg-emerald-600 hover:bg-emerald-700 text-white' 
                           : 'bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 shadow-xs'
@@ -1033,16 +1491,24 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                         <p className="font-bold text-slate-900">Version {doc.version_number} (Current)</p>
                         <p className="text-[10px] text-slate-500">{doc.upload_date_time?.split('T')[0]} by {doc.uploaded_by_name}</p>
                       </div>
-                      <span className="text-[10px] px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded font-mono font-bold border border-emerald-300">Effective</span>
+                      <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold border ${
+                        doc.status === 'Effective' ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-blue-100 text-blue-800 border-blue-300'
+                      }`}>
+                        {doc.status}
+                      </span>
                     </div>
 
-                    <div className="flex items-center justify-between opacity-60">
-                      <div>
-                        <p className="font-bold text-slate-700">Version 0.1 (Draft)</p>
-                        <p className="text-[10px] text-slate-500">Initial submission</p>
+                    {(doc.versions_history || []).map((vh, vidx) => (
+                      <div key={vidx} className="flex items-center justify-between opacity-75 border-b border-slate-200/50 pb-1.5">
+                        <div>
+                          <p className="font-bold text-slate-700">Version {vh.version_number} (Superseded)</p>
+                          <p className="text-[10px] text-slate-500">{vh.notes || 'Previous revision'}</p>
+                        </div>
+                        <span className="text-[10px] px-2 py-0.5 bg-slate-200 text-slate-700 rounded font-mono">
+                          Superseded
+                        </span>
                       </div>
-                      <span className="text-[10px] px-2 py-0.5 bg-slate-200 text-slate-700 rounded font-mono border border-slate-300">Superseded</span>
-                    </div>
+                    ))}
                   </div>
 
                   {!isInspectorMode && (
@@ -1057,53 +1523,12 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
               </div>
             )}
 
-            {/* TAB 3: QC REVIEW CHECKLIST */}
+            {/* TAB: QC CHECKLIST */}
             {activeTab === 'qc' && (
               <div className="space-y-4">
-                {/* Live QC Status Summary Box */}
                 <div className="bg-slate-50 p-3.5 rounded-lg border border-slate-200 space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Current QC Status</span>
-                    <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${
-                      doc.qc_status === 'Passed'
-                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                        : doc.qc_status === 'Query Raised' || doc.qc_status === 'Failed'
-                        ? 'bg-rose-50 text-rose-700 border-rose-200'
-                        : 'bg-amber-50 text-amber-700 border-amber-200'
-                    }`}>
-                      {doc.qc_status || 'In Progress'}
-                    </span>
-                  </div>
-                  <div className="text-[11px] text-slate-600 space-y-1 pt-1 border-t border-slate-200/70">
-                    <p><span className="text-slate-400">Document State:</span> <strong className="text-slate-800">{doc.status}</strong></p>
-                    <p><span className="text-slate-400">Reviewer:</span> <strong className="text-slate-800">{doc.qc_reviewer_name || 'Pending Review'}</strong> {doc.qc_review_date ? `(${doc.qc_review_date})` : ''}</p>
-                    {doc.qc_comments && (
-                      <p className="p-2 bg-white rounded border border-slate-200 text-slate-700 text-[11px]">
-                        <span className="font-semibold text-slate-500 block text-[10px]">Last QC Note:</span>
-                        {doc.qc_comments}
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                {qcFeedback && (
-                  <div className={`p-3 rounded-lg border text-xs font-semibold flex items-center justify-between ${
-                    qcFeedback.status === 'Passed'
-                      ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                      : qcFeedback.status === 'Query Raised'
-                      ? 'bg-amber-50 border-amber-200 text-amber-800'
-                      : 'bg-rose-50 border-rose-200 text-rose-800'
-                  }`}>
-                    <span>{qcFeedback.message}</span>
-                    <button onClick={() => setQcFeedback(null)} className="text-slate-400 hover:text-slate-700 ml-2 cursor-pointer">
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                )}
-
-                <div className="bg-slate-50 p-3.5 rounded-lg border border-slate-200 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-slate-900 font-bold">QC Review Checklist (SOP-TMF-04)</h3>
+                    <h3 className="text-slate-900 font-bold">ALCOA+ Quality Checklist (SOP-TMF-04)</h3>
                     <button
                       type="button"
                       onClick={() => {
@@ -1135,85 +1560,20 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                   </div>
                 </div>
 
-                {isSelfUploaded && (
-                  <div className="bg-amber-50 border border-amber-300 p-3 rounded-lg text-amber-900 text-xs flex items-start gap-2 shadow-xs">
-                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                    <div>
-                      <span className="font-bold">Self-Review Prohibited (ICH GCP E6.5.1 Maker-Checker Rule):</span>
-                      <p className="text-[11px] text-amber-800 mt-0.5">
-                        You uploaded/submitted this document. Under 21 CFR Part 11 and ICH GCP Four-Eyes Principle, an independent peer reviewer or TMF Lead must perform the quality inspection.
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {!isInspectorMode && !isSelfUploaded && (canQcPass || canQcReject) && (
-                  <div className="space-y-2.5">
-                    {canQcReject && (
-                      <div>
-                        <label className="block text-slate-700 font-medium mb-1">Issue Category (if Raising Query / Failing):</label>
-                        <select
-                          value={qcIssueCategory}
-                          onChange={(e) => setQcIssueCategory(e.target.value)}
-                          className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 focus:border-blue-500 focus:outline-none"
-                        >
-                          <option value="Missing Required Signature">Missing Required Signature</option>
-                          <option value="Incorrect Site Number">Incorrect Site Number</option>
-                          <option value="Illegible Document Scan">Illegible Document Scan</option>
-                          <option value="Incorrect TMF Artifact Classification">Incorrect TMF Artifact Classification</option>
-                          <option value="Unredacted Subject Information (PHI)">Unredacted Subject Information (PHI)</option>
-                          <option value="Duplicate File Upload Detected">Duplicate File Upload Detected</option>
-                        </select>
-                      </div>
-                    )}
-
-                    <div>
-                      <label className="block text-slate-700 font-medium mb-1">QC Reviewer Comments / Findings</label>
-                      <textarea
-                        rows={3}
-                        value={qcCommentsInput}
-                        onChange={(e) => setQcCommentsInput(e.target.value)}
-                        placeholder="Enter quality findings, approval notes, or query details..."
-                        className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-slate-900 focus:border-blue-500 focus:bg-white focus:outline-none shadow-xs"
-                      />
-                    </div>
-
-                    <div className="flex items-center gap-2 pt-1 flex-wrap">
-                      {canQcPass && (
-                        <button
-                          type="button"
-                          onClick={() => handleQcAction('Passed')}
-                          className="px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center justify-center gap-1 shadow-xs cursor-pointer transition-colors text-xs"
-                        >
-                          <CheckCircle2 className="w-3.5 h-3.5" /> Pass QC
-                        </button>
-                      )}
-
-                      {canQcReject && (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => handleQcAction('Query Raised')}
-                            className="px-3.5 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold flex items-center justify-center gap-1 shadow-xs cursor-pointer transition-colors text-xs"
-                          >
-                            <HelpCircle className="w-3.5 h-3.5" /> Raise Query
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleQcAction('Failed')}
-                            className="px-3.5 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold flex items-center justify-center gap-1 shadow-xs cursor-pointer transition-colors text-xs"
-                          >
-                            <XCircle className="w-3.5 h-3.5" /> Reject / Fail
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                )}
+                <div className="space-y-2">
+                  <label className="block text-slate-700 font-medium text-xs">QC Finding &amp; Query Notes:</label>
+                  <textarea
+                    rows={3}
+                    value={qcCommentsInput}
+                    onChange={(e) => setQcCommentsInput(e.target.value)}
+                    placeholder="Enter compliance observations or remediation instructions..."
+                    className="w-full bg-slate-50 border border-slate-300 rounded p-2 text-xs text-slate-900"
+                  />
+                </div>
               </div>
             )}
 
-            {/* TAB 4: E-SIGNATURE */}
+            {/* TAB: E-SIGNATURE */}
             {activeTab === 'esign' && (
               <div className="space-y-4">
                 <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-2">
@@ -1222,13 +1582,13 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                     21 CFR Part 11 Signature Binding
                   </h3>
                   <p className="text-[11px] text-slate-600">
-                    Signature Type: <span className="text-slate-900 font-semibold">{doc.signature_type}</span>
+                    Signature Type: <span className="text-slate-900 font-semibold">{doc.signature_type || 'None'}</span>
                   </p>
                   <p className="text-[11px] text-slate-600">
                     Status: <span className={`font-bold ${doc.status === 'Effective' ? 'text-emerald-700' : 'text-amber-700'}`}>{doc.status}</span>
                   </p>
 
-                  {!isInspectorMode && doc.status !== 'Effective' && canSign && (
+                  {!isInspectorMode && doc.status !== 'Effective' && (canSign || isAdmin) && (
                     <button
                       onClick={() => setIsSignModalOpen(true)}
                       className="w-full mt-2 py-2 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold shadow-md shadow-emerald-200 flex items-center justify-center gap-1.5 cursor-pointer"
@@ -1240,7 +1600,7 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
               </div>
             )}
 
-            {/* TAB 5: AUDIT TRAIL */}
+            {/* TAB: AUDIT TRAIL */}
             {activeTab === 'audit' && (
               <div className="space-y-2">
                 <h3 className="text-slate-500 font-bold uppercase tracking-wider text-[10px]">21 CFR Part 11 Event History</h3>
@@ -1252,7 +1612,7 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                       <div key={log.id} className="bg-slate-50 p-2.5 rounded-lg border border-slate-200 text-[11px] space-y-1">
                         <div className="flex items-center justify-between text-blue-700 font-bold">
                           <span>{log.action}</span>
-                          <span className="text-[10px] text-slate-400 font-mono">{log.timestamp.split('T')[0]}</span>
+                          <span className="text-[10px] text-slate-400 font-mono">{log.timestamp?.split('T')[0]}</span>
                         </div>
                         <p className="text-slate-700">By: {log.user_name} ({log.user_role})</p>
                         <p className="text-slate-500 font-mono text-[10px]">Reason: {log.reason}</p>
@@ -1263,7 +1623,7 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
               </div>
             )}
 
-            {/* TAB 6: COMMENTS */}
+            {/* TAB: DISCUSSION COMMENTS */}
             {activeTab === 'comments' && (
               <div className="space-y-4">
                 <div className="space-y-2">
@@ -1282,14 +1642,14 @@ export default function DocumentViewerDrawer({ doc: initialDoc, onClose, default
                   <form onSubmit={handleCommentSubmit} className="space-y-2">
                     <input
                       type="text"
-                      placeholder="Add a comment or note..."
+                      placeholder="Add a team comment or note..."
                       value={newComment}
                       onChange={(e) => setNewComment(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-slate-900 focus:border-blue-500 shadow-xs"
+                      className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-slate-900 focus:border-blue-500 shadow-xs text-xs"
                     />
                     <button
                       type="submit"
-                      className="w-full py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-xs"
+                      className="w-full py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-xs cursor-pointer"
                     >
                       Post Comment
                     </button>

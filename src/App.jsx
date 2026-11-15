@@ -216,29 +216,43 @@ class ProductionErrorBoundary extends React.Component {
     return { hasError: true, error };
   }
   componentDidCatch(error, info) {
-    console.error('[VigiThink eTMF Runtime Error]', error, info);
+    console.error('[VigiThink eTMF Safe Boundary]', error, info);
   }
   render() {
     if (this.state.hasError) {
+      const etmfHome = typeof window !== 'undefined' && window.location.pathname.startsWith('/etmf') ? '/etmf/' : '/';
       return (
-        <div className="min-h-screen bg-slate-900 text-white flex items-center justify-center p-6">
-          <div className="max-w-md w-full bg-slate-800 border border-slate-700 rounded-xl p-6 shadow-2xl text-center">
-            <div className="w-12 h-12 rounded-full bg-rose-500/20 text-rose-400 flex items-center justify-center mx-auto mb-4 text-xl font-bold">
-              !
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 font-sans">
+          <div className="max-w-md w-full bg-white border border-slate-300 rounded-xl p-6 shadow-2xl text-center space-y-4">
+            <div className="w-11 h-11 rounded-full bg-blue-50 text-blue-700 flex items-center justify-center mx-auto text-lg font-bold border border-blue-200">
+              i
             </div>
-            <h2 className="text-lg font-bold text-white mb-2">VigiThink eTMF: Session Recovery</h2>
-            <p className="text-xs text-slate-300 mb-5 leading-relaxed">
-              An unexpected interface state occurred. Your clinical trial records and 21 CFR Part 11 audit trail remain safely stored.
-            </p>
-            <button
-              onClick={() => {
-                this.setState({ hasError: false, error: null });
-                window.location.href = '/';
-              }}
-              className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg shadow transition"
-            >
-              Reload eTMF Workspace
-            </button>
+            <div className="space-y-1">
+              <h3 className="text-sm font-bold text-slate-900">Workspace Action Notice</h3>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                The requested view encountered a temporary display state. Your clinical trial records, signatures, and audit trail are safely preserved.
+              </p>
+            </div>
+            <div className="flex items-center justify-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  this.setState({ hasError: false, error: null });
+                }}
+                className="px-4 py-2 bg-blue-700 hover:bg-blue-800 text-white text-xs font-bold rounded shadow-xs cursor-pointer transition"
+              >
+                Continue in Workspace
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  window.location.href = etmfHome;
+                }}
+                className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded border border-slate-300 cursor-pointer transition"
+              >
+                Go to eTMF Home
+              </button>
+            </div>
           </div>
         </div>
       );

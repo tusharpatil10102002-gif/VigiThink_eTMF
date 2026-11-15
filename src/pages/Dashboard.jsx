@@ -48,10 +48,12 @@ export default function Dashboard() {
   // Scoped documents for current user
   const scopedDocs = documents.filter(isDocumentInScope);
 
-  // Common counts
-  const countApproved = scopedDocs.filter(d => d.status === 'Effective' || d.status === 'Approved' || d.qc_status === 'Passed').length;
-  const countPendingQC = scopedDocs.filter(d => d.qc_status === 'In Progress' || d.qc_status === 'Not Started' || d.status === 'Draft' || d.lifecycle_stage === 6).length;
-  const countRejected = scopedDocs.filter(d => d.qc_status === 'Failed' || d.status === 'Rejected/Correction' || (d.lifecycle_stage === 7 && d.lifecycle_status?.toLowerCase().includes('reject'))).length;
+  // Common workflow counts
+  const countApproved = scopedDocs.filter(d => d.status === 'Effective' || d.status === 'Approved').length;
+  const countPendingQC = scopedDocs.filter(d => (d.status === 'Submitted' || d.status === 'Draft' || d.qc_status === 'In Progress' || d.qc_status === 'Not Started' || d.lifecycle_stage === 5 || d.lifecycle_stage === 6) && d.qc_status !== 'Passed').length;
+  const countPendingReview = scopedDocs.filter(d => d.status === 'QC Passed' || (d.qc_status === 'Passed' && d.content_review_status !== 'Passed' && d.status !== 'Approved' && d.status !== 'Effective')).length;
+  const countPendingApproval = scopedDocs.filter(d => d.status === 'Approval Pending' || (d.content_review_status === 'Passed' && d.status !== 'Effective' && d.status !== 'Approved') || d.lifecycle_stage === 8).length;
+  const countRevisionRequired = scopedDocs.filter(d => d.status === 'Revision Required' || d.status === 'QC Rejected' || d.qc_status === 'Failed' || d.qc_status === 'Query Raised' || d.content_review_status === 'Revision Required').length;
   const countQueries = scopedDocs.filter(d => d.qc_status === 'Query Raised').length;
   const countArchived = scopedDocs.filter(d => d.status === 'Archived' || d.lifecycle_stage === 11).length;
   const countSuperseded = scopedDocs.filter(d => d.status === 'Superseded').length;
@@ -66,45 +68,41 @@ export default function Dashboard() {
   // TMF Completeness Estimate
   const completenessPct = scopedDocs.length > 0 ? Math.min(100, Math.round((countApproved / Math.max(1, scopedDocs.length)) * 100)) : 85;
 
-  // Dynamic filter tabs per role
+  // Comprehensive Document Review & Approval Workflow Filter Tabs
   let filterTabs = [
     { id: "All", label: "All Records", count: scopedDocs.length },
-    { id: "Review", label: "Pending QC", count: countPendingQC },
-    { id: "Approved", label: "Approved / Effective", count: countApproved },
-    { id: "Rejected", label: "Rejected / Action", count: countRejected },
-    { id: "Queries", label: "Queries", count: countQueries }
+    { id: "PendingQC", label: "Pending QC", count: countPendingQC },
+    { id: "PendingReview", label: "Pending Reviews", count: countPendingReview },
+    { id: "PendingApproval", label: "Pending Approvals", count: countPendingApproval },
+    { id: "RevisionRequired", label: "Revision Required", count: countRevisionRequired },
+    { id: "Approved", label: "Approved / Effective", count: countApproved }
   ];
 
   if (roleId === 'site_user' || roleId === 'investigator') {
     filterTabs = [
       { id: "All", label: "All Site Records", count: scopedDocs.length },
       { id: "Mine", label: "Uploaded by Me", count: myUploadedDocs.length },
-      { id: "Review", label: "Pending Review", count: countPendingQC },
-      { id: "Rejected", label: "Rejected / Rework", count: countRejected },
+      { id: "PendingQC", label: "Pending QC", count: countPendingQC },
+      { id: "RevisionRequired", label: "Revision Required", count: countRevisionRequired },
       { id: "Approved", label: "Accepted / Filed", count: countApproved }
     ];
   } else if (roleId === 'tmf_manager') {
     filterTabs = [
       { id: "All", label: "All Trial Documents", count: scopedDocs.length },
       { id: "AssignedMe", label: "Assigned to Me", count: assignedToMeDocs.length },
-      { id: "Review", label: "QC Inspection Queue", count: countPendingQC },
-      { id: "Rejected", label: "QC Rejected", count: countRejected },
-      { id: "Approved", label: "QC Accepted", count: countApproved }
-    ];
-  } else if (roleId === 'cra') {
-    filterTabs = [
-      { id: "All", label: "Site Documents", count: scopedDocs.length },
-      { id: "Mine", label: "Uploaded by Me", count: myUploadedDocs.length },
-      { id: "Review", label: "Pending QC", count: countPendingQC },
-      { id: "Rejected", label: "Returned for Rework", count: countRejected },
-      { id: "Approved", label: "Effective", count: countApproved }
+      { id: "PendingQC", label: "Pending QC", count: countPendingQC },
+      { id: "PendingReview", label: "Pending Reviews", count: countPendingReview },
+      { id: "PendingApproval", label: "Pending Approvals", count: countPendingApproval },
+      { id: "RevisionRequired", label: "Revision Required", count: countRevisionRequired },
+      { id: "Approved", label: "Approved / Effective", count: countApproved }
     ];
   } else if (roleId === 'doc_controller') {
     filterTabs = [
       { id: "All", label: "Repository Master", count: scopedDocs.length },
-      { id: "Review", label: "Pending QC Queue", count: countPendingQC },
-      { id: "PendingFiling", label: "Pending Filing", count: countPendingFiling },
-      { id: "Rejected", label: "QC Rejected / Rework", count: countRejected },
+      { id: "PendingQC", label: "Pending QC Queue", count: countPendingQC },
+      { id: "PendingReview", label: "Content Reviews", count: countPendingReview },
+      { id: "PendingApproval", label: "Pending Approvals", count: countPendingApproval },
+      { id: "RevisionRequired", label: "Revision Required", count: countRevisionRequired },
       { id: "Approved", label: "Filed / Effective", count: countApproved }
     ];
   }
@@ -123,9 +121,21 @@ export default function Dashboard() {
       if (!match) return false;
     }
 
-    if (activeCategory === "Review") return d.qc_status === 'In Progress' || d.qc_status === 'Not Started' || d.status === 'Draft' || d.lifecycle_stage === 6;
-    if (activeCategory === "Approved") return d.status === 'Effective' || d.status === 'Approved' || d.qc_status === 'Passed';
-    if (activeCategory === "Rejected") return d.qc_status === 'Failed' || d.status === 'Rejected/Correction' || (d.lifecycle_stage === 7 && d.lifecycle_status?.toLowerCase().includes('reject'));
+    if (activeCategory === "PendingQC" || activeCategory === "Review") {
+      return (d.status === 'Submitted' || d.status === 'Draft' || d.qc_status === 'In Progress' || d.qc_status === 'Not Started' || d.lifecycle_stage === 5 || d.lifecycle_stage === 6) && d.qc_status !== 'Passed';
+    }
+    if (activeCategory === "PendingReview") {
+      return d.status === 'QC Passed' || (d.qc_status === 'Passed' && d.content_review_status !== 'Passed' && d.status !== 'Approved' && d.status !== 'Effective');
+    }
+    if (activeCategory === "PendingApproval") {
+      return d.status === 'Approval Pending' || (d.content_review_status === 'Passed' && d.status !== 'Effective' && d.status !== 'Approved') || d.lifecycle_stage === 8;
+    }
+    if (activeCategory === "RevisionRequired" || activeCategory === "Rejected") {
+      return d.status === 'Revision Required' || d.status === 'QC Rejected' || d.qc_status === 'Failed' || d.qc_status === 'Query Raised' || d.content_review_status === 'Revision Required';
+    }
+    if (activeCategory === "Approved") {
+      return d.status === 'Effective' || d.status === 'Approved';
+    }
     if (activeCategory === "Queries") return d.qc_status === 'Query Raised';
     if (activeCategory === "Mine") return d.uploaded_by_id === currentUser?.id || d.submitted_by_id === currentUser?.id;
     if (activeCategory === "AssignedMe") return d.assigned_reviewer_id === currentUser?.id || d.assigned_reviewer_name === currentUser?.name;
@@ -250,6 +260,109 @@ export default function Dashboard() {
           </button>
         </div>
       )}
+
+      {/* ============================================================== */}
+      {/* 5-GATE CLINICAL DOCUMENT REVIEW & APPROVAL WORKFLOW HUB */}
+      {/* ============================================================== */}
+      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-blue-950 rounded-xl p-4 text-white shadow-md border border-indigo-900/50 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-emerald-400" />
+            <h2 className="text-sm font-bold tracking-wide">Document Review &amp; Approval Pipeline</h2>
+            <span className="text-[10px] text-blue-300 font-mono">21 CFR Part 11 &amp; ICH GCP E6</span>
+          </div>
+          <span className="text-[10px] bg-blue-900/60 text-blue-200 border border-blue-400/30 px-2 py-0.5 rounded font-mono">
+            Maker-Checker &amp; Concurrency Control Active
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
+          {/* Gate 2: Pending QC */}
+          <div 
+            onClick={() => setActiveCategory('PendingQC')}
+            className={`p-3 rounded-lg border cursor-pointer transition-all ${
+              activeCategory === 'PendingQC' 
+                ? 'bg-amber-500/20 border-amber-400 ring-2 ring-amber-400/40 shadow-md' 
+                : 'bg-white/10 hover:bg-white/15 border-white/10'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-amber-300 font-bold uppercase tracking-wider">Gate 2: Pending QC</span>
+              <Clock className="w-3.5 h-3.5 text-amber-400" />
+            </div>
+            <p className="text-2xl font-bold text-white mt-1">{countPendingQC}</p>
+            <p className="text-[10px] text-amber-200/80 mt-0.5">Doc Controller Inspection</p>
+          </div>
+
+          {/* Gate 3: Pending Reviews */}
+          <div 
+            onClick={() => setActiveCategory('PendingReview')}
+            className={`p-3 rounded-lg border cursor-pointer transition-all ${
+              activeCategory === 'PendingReview' 
+                ? 'bg-sky-500/20 border-sky-400 ring-2 ring-sky-400/40 shadow-md' 
+                : 'bg-white/10 hover:bg-white/15 border-white/10'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-sky-300 font-bold uppercase tracking-wider">Gate 3: Content Review</span>
+              <Eye className="w-3.5 h-3.5 text-sky-400" />
+            </div>
+            <p className="text-2xl font-bold text-white mt-1">{countPendingReview}</p>
+            <p className="text-[10px] text-sky-200/80 mt-0.5">TMF Lead &amp; CRA Redlines</p>
+          </div>
+
+          {/* Gate 4: Pending Approvals */}
+          <div 
+            onClick={() => setActiveCategory('PendingApproval')}
+            className={`p-3 rounded-lg border cursor-pointer transition-all ${
+              activeCategory === 'PendingApproval' 
+                ? 'bg-purple-500/20 border-purple-400 ring-2 ring-purple-400/40 shadow-md' 
+                : 'bg-white/10 hover:bg-white/15 border-white/10'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-purple-300 font-bold uppercase tracking-wider">Gate 4: Admin Approval</span>
+              <Award className="w-3.5 h-3.5 text-purple-400" />
+            </div>
+            <p className="text-2xl font-bold text-white mt-1">{countPendingApproval}</p>
+            <p className="text-[10px] text-purple-200/80 mt-0.5">Mandatory Admin E-Sign</p>
+          </div>
+
+          {/* Revision Required */}
+          <div 
+            onClick={() => setActiveCategory('RevisionRequired')}
+            className={`p-3 rounded-lg border cursor-pointer transition-all ${
+              activeCategory === 'RevisionRequired' 
+                ? 'bg-rose-500/20 border-rose-400 ring-2 ring-rose-400/40 shadow-md' 
+                : 'bg-white/10 hover:bg-white/15 border-white/10'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-rose-300 font-bold uppercase tracking-wider">Revision Required</span>
+              <AlertCircle className="w-3.5 h-3.5 text-rose-400" />
+            </div>
+            <p className="text-2xl font-bold text-white mt-1">{countRevisionRequired}</p>
+            <p className="text-[10px] text-rose-200/80 mt-0.5">Returned to Uploader</p>
+          </div>
+
+          {/* Gate 5: Approved / Effective */}
+          <div 
+            onClick={() => setActiveCategory('Approved')}
+            className={`p-3 rounded-lg border cursor-pointer transition-all ${
+              activeCategory === 'Approved' 
+                ? 'bg-emerald-500/20 border-emerald-400 ring-2 ring-emerald-400/40 shadow-md' 
+                : 'bg-white/10 hover:bg-white/15 border-white/10'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-emerald-300 font-bold uppercase tracking-wider">Gate 5: Effective</span>
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+            </div>
+            <p className="text-2xl font-bold text-white mt-1">{countApproved}</p>
+            <p className="text-[10px] text-emerald-200/80 mt-0.5">Sealed &amp; TMF Filed</p>
+          </div>
+        </div>
+      </div>
 
       {/* ============================================================== */}
       {/* SAP FIORI / VEEVA VAULT KPI TILES */}

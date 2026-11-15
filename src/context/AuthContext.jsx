@@ -7,27 +7,29 @@ const AuthContext = createContext();
 export const AuthProvider = ({ children }) => {
   const getStoredUser = () => {
     try {
+      const isAuth = localStorage.getItem('vigithink_is_authenticated') === 'true';
+      if (!isAuth) return null;
       const saved = localStorage.getItem('vigithink_current_user');
       if (saved) {
         const u = JSON.parse(saved);
         if (u && (u.id || u.roleId)) return u;
       }
     } catch (e) {}
-    return DEMO_USERS[0];
+    return null;
   };
 
   const initialUser = getStoredUser();
 
-  const [isAuthenticated, setIsAuthenticated] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(Boolean(initialUser));
   const [usersList, setUsersList] = useState(DEMO_USERS);
   const [currentUser, setCurrentUser] = useState(initialUser);
-  const [activeRoleId, setActiveRoleId] = useState(initialUser.roleId || 'system_admin');
+  const [activeRoleId, setActiveRoleId] = useState(initialUser?.roleId || 'system_admin');
 
   // 4D Scoping State
-  const [selectedStudyScope, setSelectedStudyScope] = useState(initialUser.studyScope || 'ALL');
-  const [selectedCountryScope, setSelectedCountryScope] = useState(initialUser.countryScope || 'India');
-  const [selectedSiteScope, setSelectedSiteScope] = useState(initialUser.siteScope || 'ALL');
-  const [isInspectorMode, setIsInspectorMode] = useState(initialUser.roleId === 'auditor');
+  const [selectedStudyScope, setSelectedStudyScope] = useState(initialUser?.studyScope || 'ALL');
+  const [selectedCountryScope, setSelectedCountryScope] = useState(initialUser?.countryScope || 'India');
+  const [selectedSiteScope, setSelectedSiteScope] = useState(initialUser?.siteScope || 'ALL');
+  const [isInspectorMode, setIsInspectorMode] = useState(initialUser?.roleId === 'auditor');
 
   // Keep state synced whenever currentUser changes
   useEffect(() => {
@@ -39,6 +41,13 @@ export const AuthProvider = ({ children }) => {
       setIsInspectorMode(currentUser.roleId === 'auditor');
       try {
         localStorage.setItem('vigithink_current_user', JSON.stringify(currentUser));
+        localStorage.setItem('vigithink_is_authenticated', 'true');
+      } catch (e) {}
+    } else {
+      setIsAuthenticated(false);
+      try {
+        localStorage.removeItem('vigithink_current_user');
+        localStorage.removeItem('vigithink_is_authenticated');
       } catch (e) {}
     }
   }, [currentUser]);
@@ -140,8 +149,11 @@ export const AuthProvider = ({ children }) => {
   const logout = () => {
     try {
       localStorage.removeItem('vigithink_current_user');
-      localStorage.setItem('vigithink_is_authenticated', 'false');
+      localStorage.removeItem('vigithink_is_authenticated');
+      sessionStorage.removeItem('vigithink_current_user');
+      sessionStorage.removeItem('vigithink_is_authenticated');
     } catch (e) {}
+    setCurrentUser(null);
     setIsAuthenticated(false);
   };
 
@@ -252,6 +264,7 @@ export const AuthProvider = ({ children }) => {
 
   // Check action permissions (View, Download, Upload, Edit, Review, Approve, Delete, Admin, etc.)
   const hasPermission = (permissionKey) => {
+    if (!isAuthenticated || !currentUser) return false;
     if (activeRoleId === 'system_admin') return true; // System Administrator has full administrative access
     
     // Inspector / Auditor: Strict read-only inspection access

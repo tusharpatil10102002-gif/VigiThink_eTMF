@@ -409,12 +409,13 @@ export default function TmfExplorer() {
               const assignedUser = (allUsers || []).find(
                 u => u.siteScope === siteTargetId || (site.assignedPiName && u.name.toLowerCase().includes(site.assignedPiName.split(' ')[0].toLowerCase()))
               );
-              const siteDocsCount = documents.filter(d => d.study_id === activeStudyObj.id && (!d.site_id || d.site_id.includes(siteTargetId))).length;
+              const siteDocsCount = documents.filter(d => d.study_id === activeStudyObj?.id && (!d.site_id || d.site_id.includes(siteTargetId))).length;
+              const openStudyId = activeStudyObj?.id || activeStudyFolder;
 
               return (
                 <div
                   key={site.id || site.number}
-                  onClick={() => updateExplorerRoute({ study: activeStudyObj.id, site: siteTargetId })}
+                  onClick={() => updateExplorerRoute({ study: openStudyId, site: siteTargetId })}
                   className="bg-white border border-slate-200 hover:border-indigo-400 rounded-lg p-4 cursor-pointer transition-all shadow-xs hover:shadow-md flex flex-col justify-between gap-3"
                 >
                   <div className="space-y-2">
@@ -627,9 +628,9 @@ export default function TmfExplorer() {
                     : 'bg-slate-50 text-slate-700 border-slate-300 hover:bg-slate-100'
                 }`}
               >
-                All Study Sites ({activeStudyObj.sites.length})
+                All Study Sites ({(activeStudyObj?.sites || []).length})
               </button>
-              {activeStudyObj.sites.map(site => (
+              {(activeStudyObj?.sites || []).map(site => (
                 <button
                   key={site.id}
                   onClick={() => updateExplorerRoute({ study: activeStudyFolder, zone: activeZoneId, section: activeSectionId, site: site.id })}
@@ -773,7 +774,7 @@ export default function TmfExplorer() {
               >
                 All Sections in Zone {activeZoneId}
               </button>
-              {activeZoneObj?.sections.map(sec => (
+              {(activeZoneObj?.sections || []).map(sec => (
                 <button
                   key={sec.id}
                   onClick={() => updateExplorerRoute({ study: activeStudyFolder, site: activeSiteId, zone: activeZoneId, section: sec.id })}

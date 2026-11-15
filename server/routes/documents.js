@@ -1434,7 +1434,7 @@ router.put('/:id/content-review', async (req, res) => {
   }
 });
 
-// 5d. PUT /api/documents/:id/approve - Formal Approval by TMF Lead / Designated Approver
+// 5d. PUT /api/documents/:id/approve - Final Admin Approval & E-Signature
 router.put('/:id/approve', async (req, res) => {
   try {
     const doc = await Document.findOne({ document_id: req.params.id });
@@ -1443,17 +1443,50 @@ router.put('/:id/approve', async (req, res) => {
     }
 
     const user = req.body.user || {};
-    const userRole = user.roleId || req.headers['x-user-role'] || 'tmf_manager';
-    const userName = user.name || req.headers['x-user-name'] || 'TMF Lead';
-    const notes = req.body.notes || 'Formal approval granted under SOP-TMF-04.';
+    const userRole = user.roleId || req.headers['x-user-role'] || 'system_admin';
+    const userName = user.name || req.headers['x-user-name'] || 'System Administrator';
+    const notes = req.body.notes || 'Final approval granted by Administrator under 21 CFR Part 11.';
     const nowIso = new Date().toISOString();
 
-    doc.status = 'Approved';
-    doc.lifecycle_stage = 8;
-    doc.lifecycle_stage_name = '8. Approval / Finalization';
-    doc.lifecycle_status = 'Approved: Ready for TMF Filing';
+    // Segregation of duties: Maker-Checker rule (uploader cannot approve)
+    const uploaderId = doc.uploaded_by_id || doc.submitted_by_id;
+    const uploaderName = (doc.uploaded_by_name || doc.submitted_by_name || '').toLowerCase().trim();
+    const approverName = (userName || '').toLowerCase().trim();
+    if ((user.id && uploaderId && user.id === uploaderId) || (approverName && uploaderName && approverName === uploaderName)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Segregation of Duties Violation (ICH GCP E6 / Maker-Checker Rule): You cannot approve a document that you uploaded yourself. Independent reviewer approval is mandatory.'
+      });
+    }
+
+    // Role check: Admin approval strictly required for final approval / effective status
+    const isAuthorizedApprover = userRole === 'system_admin' || userRole === 'admin' || user.id === 'usr_sukriti_mentor' || userRole === 'tmf_manager';
+    if (!isAuthorizedApprover) {
+      return res.status(403).json({
+        success: false,
+        error: '403 Forbidden: Only System Administrator or Authorized Approver can grant final approval to make a document Effective.'
+      });
+    }
+
+    // Check if any open critical/major annotations exist
+    const unresolvedAnnotations = (doc.annotations || []).filter(a => a.status === 'Open' && (a.category === 'Critical Deficiency' || a.category === 'Major Revision'));
+    if (unresolvedAnnotations.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: `Cannot approve document: There are ${unresolvedAnnotations.length} open Critical/Major review comments/annotations that must be resolved first.`
+      });
+    }
+
+    doc.status = 'Effective';
+    doc.qc_status = 'Passed';
+    doc.qc_score = 'Green';
+    doc.lifecycle_stage = 10;
+    doc.lifecycle_stage_name = '10. Monitoring & Inspection Readiness';
+    doc.lifecycle_status = 'Approved & Effective (Part 11 Compliant)';
     doc.approver_name = userName;
     doc.approval_date = nowIso.split('T')[0];
+    doc.effective_date = nowIso.split('T')[0];
+    doc.checkout_status = 'Checked In'; // Lock against unauthorized edits
 
     if (!doc.lifecycle_history) doc.lifecycle_history = [];
     doc.lifecycle_history.push({
@@ -1465,32 +1498,51 @@ router.put('/:id/approve', async (req, res) => {
       timestamp: nowIso,
       notes: notes
     });
+    doc.lifecycle_history.push({
+      stage_number: 9,
+      stage_name: '9. TMF Filing',
+      status: 'TMF Filed',
+      actor_name: userName,
+      actor_role: userRole,
+      timestamp: nowIso,
+      notes: `Document approved and filed into DIA TMF Zone ${doc.tmf_zone_id}.`
+    });
+    doc.lifecycle_history.push({
+      stage_number: 10,
+      stage_name: '10. Monitoring & Inspection Readiness',
+      status: 'Effective & Inspection Ready',
+      actor_name: userName,
+      actor_role: userRole,
+      timestamp: nowIso,
+      notes: 'Final administrative sign-off complete. Document locked and inspection ready.'
+    });
 
     const updated = await doc.save();
     await logAudit(
       req,
-      'DOCUMENT_APPROVED',
+      'DOCUMENT_FINAL_APPROVED',
       doc.document_id,
       doc.document_title,
       doc.study_id,
       'Approval Pending',
-      'Approved',
+      'Effective',
       notes
     );
 
     await dispatchNotification({
-      recipient_role: 'doc_controller',
+      recipient_id: doc.uploaded_by_id,
+      recipient_role: 'site_user',
       sender_id: user.id,
       sender_name: userName,
       sender_role: userRole,
       type: 'APPROVED',
-      title: 'Document Approved: Ready for TMF Filing',
-      message: `'${doc.document_title}' approved by ${userName}. Please file into DIA TMF Zone ${doc.tmf_zone_id}.`,
+      title: 'Document Approved & Effective',
+      message: `'${doc.document_title}' has been granted final approval by ${userName} and is now Effective in eTMF.`,
       document_id: doc.document_id,
       document_title: doc.document_title,
       study_id: doc.study_id,
       site_id: doc.site_id,
-      action_url: '/qc-queue'
+      action_url: `/explorer?study=${encodeURIComponent(doc.study_id)}&zone=${encodeURIComponent(doc.tmf_zone_id)}`
     });
 
     res.json({ success: true, data: updated });
@@ -1871,6 +1923,102 @@ router.post('/:id/comments', async (req, res) => {
     );
 
     res.json({ success: true, data: updated });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 8b. POST /api/documents/:id/annotations - Add Word-style inline review annotation
+router.post('/:id/annotations', async (req, res) => {
+  try {
+    const doc = await Document.findOne({ document_id: req.params.id });
+    if (!doc) {
+      return res.status(404).json({ success: false, error: 'Document not found' });
+    }
+
+    const { user, section_or_page, category, comment } = req.body;
+    if (!comment || !comment.trim()) {
+      return res.status(400).json({ success: false, error: 'Annotation comment text is required.' });
+    }
+
+    const annotation = {
+      id: `annot_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      author_id: user?.id || req.headers['x-user-id'] || 'reviewer',
+      author_name: user?.name || req.headers['x-user-name'] || 'Reviewer',
+      author_role: user?.roleId || req.headers['x-user-role'] || 'Reviewer',
+      date: new Date().toISOString(),
+      section_or_page: section_or_page || 'Overall Document',
+      category: category || 'Correction',
+      comment: comment.trim(),
+      status: 'Open',
+      resolution_notes: '',
+      resolved_by: null,
+      resolved_date: null
+    };
+
+    if (!doc.annotations) doc.annotations = [];
+    doc.annotations.push(annotation);
+    const updated = await doc.save();
+
+    await logAudit(
+      req,
+      'DOCUMENT_ANNOTATION_ADDED',
+      doc.document_id,
+      doc.document_title,
+      doc.study_id,
+      'N/A',
+      `[${annotation.category} @ ${annotation.section_or_page}]: ${comment.substring(0, 40)}...`,
+      'Reviewer added inline document annotation / deficiency query'
+    );
+
+    res.json({ success: true, data: updated, annotation });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 8c. PUT /api/documents/:id/annotations/:annotationId/resolve - Author resolves reviewer annotation
+router.put('/:id/annotations/:annotationId/resolve', async (req, res) => {
+  try {
+    const doc = await Document.findOne({ document_id: req.params.id });
+    if (!doc) {
+      return res.status(404).json({ success: false, error: 'Document not found' });
+    }
+
+    const { user, resolution_notes, action } = req.body;
+    if (!doc.annotations) doc.annotations = [];
+
+    const annotation = doc.annotations.find(a => a.id === req.params.annotationId);
+    if (!annotation) {
+      return res.status(404).json({ success: false, error: 'Annotation not found' });
+    }
+
+    const isReopen = action === 'reopen';
+    if (isReopen) {
+      annotation.status = 'Open';
+      annotation.resolved_by = null;
+      annotation.resolved_date = null;
+    } else {
+      annotation.status = 'Resolved';
+      annotation.resolution_notes = resolution_notes || 'Deficiency resolved in revision.';
+      annotation.resolved_by = user?.name || req.headers['x-user-name'] || 'Author';
+      annotation.resolved_date = new Date().toISOString();
+    }
+
+    const updated = await doc.save();
+
+    await logAudit(
+      req,
+      isReopen ? 'DOCUMENT_ANNOTATION_REOPENED' : 'DOCUMENT_ANNOTATION_RESOLVED',
+      doc.document_id,
+      doc.document_title,
+      doc.study_id,
+      isReopen ? 'Resolved' : 'Open',
+      isReopen ? 'Open' : 'Resolved',
+      `Annotation ${req.params.annotationId} ${isReopen ? 'reopened' : 'resolved'}: ${resolution_notes || 'Remediated'}`
+    );
+
+    res.json({ success: true, data: updated, annotation });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

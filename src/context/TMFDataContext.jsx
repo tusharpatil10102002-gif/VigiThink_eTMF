@@ -334,16 +334,16 @@ export const TMFDataProvider = ({ children }) => {
 
         if (qcStatus === 'Passed') {
           newScore = "Green";
-          newDocStatus = "Approved";
-          newLifecycleStage = 9;
-          newLifecycleName = '9. TMF Filing';
-          newLifecycleStatus = 'TMF Filed & Approved';
-        } else if (qcStatus === 'Failed' || qcStatus === 'Query Raised') {
-          newScore = "Red";
-          newDocStatus = qcStatus === 'Failed' ? "Rejected/Correction" : "Draft";
+          newDocStatus = "QC Passed";
           newLifecycleStage = 7;
           newLifecycleName = '7. QC Review Outcome';
-          newLifecycleStatus = 'Rejected / Rework Required';
+          newLifecycleStatus = 'QC Passed: Pending Content Review';
+        } else if (qcStatus === 'Failed' || qcStatus === 'Query Raised') {
+          newScore = "Red";
+          newDocStatus = qcStatus === 'Failed' ? "QC Rejected" : "Revision Required";
+          newLifecycleStage = 7;
+          newLifecycleName = '7. QC Review Outcome';
+          newLifecycleStatus = 'QC Rejected / Revision Required';
         }
         return {
           ...doc,
@@ -475,6 +475,232 @@ export const TMFDataProvider = ({ children }) => {
     } catch (e) {
       console.warn('[eTMF] advanceDocumentLifecycle error:', e.message);
     }
+  };
+
+  // Perform Content Review (Gate 3 in Workflow)
+  const performContentReview = async (docId, reviewDecision, comments, correctionsRequested, user) => {
+    const isPassed = reviewDecision === 'Passed';
+    const nowIso = new Date().toISOString();
+
+    setDocuments(prev => prev.map(doc => {
+      if (doc.document_id === docId) {
+        return {
+          ...doc,
+          content_review_status: reviewDecision,
+          content_reviewer_id: user?.id,
+          content_reviewer_name: user?.name,
+          content_reviewer_role: user?.roleId,
+          content_review_date: nowIso.split('T')[0],
+          content_review_comments: comments,
+          status: isPassed ? 'Approval Pending' : 'Revision Required',
+          lifecycle_stage: isPassed ? 8 : 7,
+          lifecycle_stage_name: isPassed ? '8. Approval / Finalization' : '7. QC Review Outcome',
+          lifecycle_status: isPassed ? 'Content Verified: Pending Final Approval' : 'Content Review: Revision Required',
+          qc_status: isPassed ? 'Passed' : 'Failed',
+          qc_score: isPassed ? 'Green' : 'Red'
+        };
+      }
+      return doc;
+    }));
+
+    try {
+      const res = await apiFetch(`/api/documents/${docId}/content-review`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reviewDecision, comments, correctionsRequested, user })
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.data) {
+          setDocuments(prev => prev.map(d => d.document_id === docId ? json.data : d));
+          return json.data;
+        }
+      }
+    } catch (e) {
+      console.warn('[eTMF] performContentReview error:', e.message);
+    }
+
+    logAuditEvent(
+      user,
+      isPassed ? "CONTENT_REVIEW_PASSED" : "CONTENT_REVISION_REQUESTED",
+      "DOCUMENT",
+      docId,
+      docId,
+      selectedStudyId,
+      "Under Review",
+      isPassed ? "Approval Pending" : "Revision Required",
+      comments || `Content review decision: ${reviewDecision}`
+    );
+  };
+
+  // Perform Final Admin Approval (Gate 4 in Workflow - Mandatory for Effective)
+  const performFinalApproval = async (docId, user, notes) => {
+    const nowIso = new Date().toISOString();
+    const signatureDate = nowIso.split('T')[0];
+
+    setDocuments(prev => prev.map(doc => {
+      if (doc.document_id === docId) {
+        return {
+          ...doc,
+          status: 'Effective',
+          effective_date: signatureDate,
+          approval_date: signatureDate,
+          approver_name: user?.name || 'System Administrator',
+          approver_id: user?.id,
+          signature_type: 'Electronic (Part 11)',
+          qc_score: 'Green',
+          qc_status: 'Passed',
+          lifecycle_stage: 10,
+          lifecycle_stage_name: '10. Monitoring & Inspection Readiness',
+          lifecycle_status: 'Approved & Effective (Part 11 Compliant)'
+        };
+      }
+      return doc;
+    }));
+
+    try {
+      const res = await apiFetch(`/api/documents/${docId}/approve`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user, notes })
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.data) {
+          setDocuments(prev => prev.map(d => d.document_id === docId ? json.data : d));
+          return json.data;
+        }
+      }
+    } catch (e) {
+      console.warn('[eTMF] performFinalApproval error:', e.message);
+    }
+
+    logAuditEvent(
+      user,
+      "DOCUMENT_FINAL_APPROVED",
+      "DOCUMENT",
+      docId,
+      docId,
+      selectedStudyId,
+      "Approval Pending",
+      "Effective",
+      notes || "Administrator granted final approval"
+    );
+  };
+
+  // Add Inline Word-Style Annotation to Document
+  const addDocumentAnnotation = async (docId, annotationData, user) => {
+    const newAnnotation = {
+      id: `annot_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      author_id: user?.id || 'reviewer',
+      author_name: user?.name || 'Reviewer',
+      author_role: user?.roleId || 'Reviewer',
+      date: new Date().toISOString(),
+      section_or_page: annotationData.section_or_page || 'Overall Document',
+      category: annotationData.category || 'Correction',
+      comment: annotationData.comment,
+      status: 'Open',
+      resolution_notes: '',
+      resolved_by: null,
+      resolved_date: null
+    };
+
+    setDocuments(prev => prev.map(doc => {
+      if (doc.document_id === docId) {
+        return {
+          ...doc,
+          annotations: [...(doc.annotations || []), newAnnotation]
+        };
+      }
+      return doc;
+    }));
+
+    try {
+      const res = await apiFetch(`/api/documents/${docId}/annotations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user,
+          section_or_page: newAnnotation.section_or_page,
+          category: newAnnotation.category,
+          comment: newAnnotation.comment
+        })
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.data) {
+          setDocuments(prev => prev.map(d => d.document_id === docId ? json.data : d));
+        }
+      }
+    } catch (e) {
+      console.warn('[eTMF] addDocumentAnnotation error:', e.message);
+    }
+
+    logAuditEvent(
+      user,
+      "DOCUMENT_ANNOTATION_ADDED",
+      "DOCUMENT",
+      docId,
+      docId,
+      selectedStudyId,
+      "N/A",
+      `[${newAnnotation.category}]: ${newAnnotation.comment.substring(0, 30)}...`,
+      "Reviewer added inline document annotation"
+    );
+    return newAnnotation;
+  };
+
+  // Resolve Reviewer Annotation
+  const resolveDocumentAnnotation = async (docId, annotationId, resolutionNotes, user, action = 'resolve') => {
+    const isReopen = action === 'reopen';
+    const nowIso = new Date().toISOString();
+
+    setDocuments(prev => prev.map(doc => {
+      if (doc.document_id === docId) {
+        const updatedAnnotations = (doc.annotations || []).map(a => {
+          if (a.id === annotationId) {
+            return {
+              ...a,
+              status: isReopen ? 'Open' : 'Resolved',
+              resolution_notes: isReopen ? a.resolution_notes : (resolutionNotes || 'Resolved'),
+              resolved_by: isReopen ? null : (user?.name || 'Author'),
+              resolved_date: isReopen ? null : nowIso
+            };
+          }
+          return a;
+        });
+        return { ...doc, annotations: updatedAnnotations };
+      }
+      return doc;
+    }));
+
+    try {
+      const res = await apiFetch(`/api/documents/${docId}/annotations/${annotationId}/resolve`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user, resolution_notes: resolutionNotes, action })
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.data) {
+          setDocuments(prev => prev.map(d => d.document_id === docId ? json.data : d));
+        }
+      }
+    } catch (e) {
+      console.warn('[eTMF] resolveDocumentAnnotation error:', e.message);
+    }
+
+    logAuditEvent(
+      user,
+      isReopen ? "DOCUMENT_ANNOTATION_REOPENED" : "DOCUMENT_ANNOTATION_RESOLVED",
+      "DOCUMENT",
+      docId,
+      docId,
+      selectedStudyId,
+      isReopen ? "Resolved" : "Open",
+      isReopen ? "Open" : "Resolved",
+      resolutionNotes || "Annotation remediation updated"
+    );
   };
 
   // Toggle Document Lock (Check Out / Check In)
@@ -1075,6 +1301,10 @@ export const TMFDataProvider = ({ children }) => {
       uploadDocument,
       updateDocumentMetadata,
       performQcReview,
+      performContentReview,
+      performFinalApproval,
+      addDocumentAnnotation,
+      resolveDocumentAnnotation,
       advanceDocumentLifecycle,
       applyPart11ESignature,
       toggleDocumentLock,

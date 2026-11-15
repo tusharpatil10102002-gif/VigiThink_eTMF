@@ -7,6 +7,21 @@ const DocumentCommentSchema = new mongoose.Schema({
   text: { type: String, required: true }
 }, { _id: false });
 
+const DocumentAnnotationSchema = new mongoose.Schema({
+  id: { type: String, default: () => `annot_${Date.now()}_${Math.random().toString(36).substring(2, 7)}` },
+  author_id: { type: String },
+  author_name: { type: String },
+  author_role: { type: String },
+  date: { type: String, default: () => new Date().toISOString() },
+  section_or_page: { type: String, default: 'Overall Document' },
+  category: { type: String, default: 'Correction' },
+  comment: { type: String, required: true },
+  status: { type: String, enum: ['Open', 'Resolved'], default: 'Open' },
+  resolution_notes: { type: String, default: '' },
+  resolved_by: { type: String, default: null },
+  resolved_date: { type: String, default: null }
+}, { _id: false });
+
 const DocumentSchema = new mongoose.Schema({
   document_id: { type: String, required: true, unique: true, index: true },
   document_title: { type: String, required: true, trim: true },
@@ -139,6 +154,7 @@ const DocumentSchema = new mongoose.Schema({
 
   // Collaboration
   comments: [DocumentCommentSchema],
+  annotations: [DocumentAnnotationSchema],
   blinding_level: { type: String, enum: ['Unblinded', 'Blinded', 'Not Blinded'], default: 'Not Blinded' }
 }, {
   timestamps: true
