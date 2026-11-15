@@ -55,6 +55,7 @@ export default function Dashboard() {
   const countPendingReview = scopedDocs.filter(d => d.status === 'QC Passed' || (d.qc_status === 'Passed' && d.content_review_status !== 'Passed' && d.status !== 'Approved' && d.status !== 'Effective')).length;
   const countPendingApproval = scopedDocs.filter(d => d.status === 'Approval Pending' || (d.content_review_status === 'Passed' && d.status !== 'Effective' && d.status !== 'Approved') || d.lifecycle_stage === 8).length;
   const countRevisionRequired = scopedDocs.filter(d => d.status === 'Revision Required' || d.status === 'QC Rejected' || d.qc_status === 'Failed' || d.qc_status === 'Query Raised' || d.content_review_status === 'Revision Required').length;
+  const countRejected = countRevisionRequired;
   const countQueries = scopedDocs.filter(d => d.qc_status === 'Query Raised').length;
   const countArchived = scopedDocs.filter(d => d.status === 'Archived' || d.lifecycle_stage === 11).length;
   const countSuperseded = scopedDocs.filter(d => d.status === 'Superseded').length;
