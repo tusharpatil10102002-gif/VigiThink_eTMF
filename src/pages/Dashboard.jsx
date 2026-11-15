@@ -21,7 +21,8 @@ import {
   ArrowRight,
   Send,
   HelpCircle,
-  Plus
+  Plus,
+  Award
 } from 'lucide-react';
 import DocumentViewerDrawer from '../components/document/DocumentViewerDrawer';
 import UploadWizardModal from '../components/document/UploadWizardModal';

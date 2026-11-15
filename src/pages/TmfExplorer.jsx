@@ -26,7 +26,8 @@ import {
   Building2,
   Building,
   Edit,
-  Edit3
+  Edit3,
+  AlertCircle
 } from 'lucide-react';
 import DocumentViewerDrawer from '../components/document/DocumentViewerDrawer';
 import FilePlanModal from '../components/document/FilePlanModal';
